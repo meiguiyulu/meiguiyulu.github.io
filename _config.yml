@@ -2,7 +2,7 @@
 title: 云小杰
 subtitle: 深谙世故而不世故，才是最成熟的善良。
 welcome_message: <a href="https://github.com/onevcat/vno-jekyll" target="_blank">Download the theme</a>
-description: Vno Jekyll is a port of my Ghost theme vno.
+description: 不见鹿，不见鲸，也不见你。
 creator: <a href="http://onev.cat">@onevcat</a>
 
 url: "http://vno.onevcat.com"
@@ -37,11 +37,11 @@ comment:
     
 # Social
 social:
-    weibo: onevcat
-    github: onevcat
+    weibo: 鼬也曾哭过
+    github: 玫瑰与鹿
     twitter: onevcat
     gplus: 107108267983477358170
-    mail: onev@onevcat.com
+    mail: 17804331763@163.com
 
 # Google Analytics
 ga:
