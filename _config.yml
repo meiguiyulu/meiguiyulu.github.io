@@ -1,9 +1,9 @@
 # Basic
-title: 云小杰
-subtitle: 深谙世故而不世故，才是最成熟的善良。
+title: Vno Jekyll
+subtitle: A blog-orientation theme for Jekyll
 welcome_message: <a href="https://github.com/onevcat/vno-jekyll" target="_blank">Download the theme</a>
-description: 不见鹿，不见鲸，也不见你。
-creator: <a href="https://github.com/meiguiyulu">@云小杰</a>
+description: Vno Jekyll is a port of my Ghost theme vno.
+creator: <a href="http://onev.cat">@onevcat</a>
 
 url: "http://vno.onevcat.com"
 
@@ -13,7 +13,7 @@ permalink: /:year/:month/:title/
 highlighter: rouge
 
 # supported colors: blue, green, purple, red, orange or slate. If you need clear, leave it empty.
-cover_color: orange
+cover_color: red
 
 # The blog button should not be removed.
 blog_button:
@@ -22,7 +22,7 @@ blog_button:
 
 # Navigation buttons in the front page.
 nav:
-    - {title: Projects, description: My Projects, url: '#'}
+    - {title: Projects, description: My Projects, url: 'http://project.onevcat.com'}
     # - {title: Another Button, description: A button, url: 'http://example.com'}
 
 # Pagination
@@ -37,11 +37,11 @@ comment:
     
 # Social
 social:
-    weibo: 鼬也曾哭过
-    github: 玫瑰与鹿
+    weibo: onevcat
+    github: onevcat
     twitter: onevcat
     gplus: 107108267983477358170
-    mail: 17804331763@163.com
+    mail: onev@onevcat.com
 
 # Google Analytics
 ga:
