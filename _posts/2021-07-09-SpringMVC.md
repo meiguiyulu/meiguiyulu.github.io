@@ -1159,13 +1159,701 @@ fastjson 的 pom依赖！
     }
 ```
 
+## 10、Ajax研究
+
+### 10.1、简介
+
+- **AJAX = Asynchronous JavaScript and XML（异步的 JavaScript 和 XML）**
+- **Ajax 不是一种新的编程语言，而是一种用于创建更好更快以及交互性更强的Web应用程序的技术。**
+- 传统的网页(即不用ajax技术的网页)，想要更新内容或者提交一个表单，都需要重新加载整个网页。
+- 使用ajax技术的网页，通过在后台服务器进行少量的数据交换，就可以实现异步局部更新。
+- 使用Ajax，用户可以创建接近本地桌面应用的直接、高可用、更丰富、更动态的Web用户界面。
+
+
+
+### 10.2、伪造Ajax
+
+我们可以使用前端的一个标签来伪造一个 Ajax 的样子。
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Iframe测试体验页面无刷新</title>
+
+  <script>
+    function go() {
+      var url = document.getElementById("url").value;
+      document.getElementById("frame1").src = url;
+    }
+  </script>
+
+</head>
+<body>
+
+<div>
+  <p>请输入地址: </p>
+  <p>
+    <input type="text" id="url" value="https://www.baidu.com/">
+    <input type="button" value="提交" onclick="go()">
+  </p>
+</div>
+
+  <div>
+    <iframe id="frame1" style="width: 100%;height: 500px;"></iframe>
+  </div>
+</body>
+</html>
+```
+
+![image-20210710190512220](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210710190512220.png)
+
+### 10.3、jQuery.ajax
+
+jQuery 是一个高效、精简并且功能丰富的 JavaScript 工具库。它提供的 API 易于使用且兼容众多浏览器，这让诸如 HTML 文档遍历和操作、事件处理、动画和 Ajax 操作更加简单。
+
+Ajax的核心是XMLHttpRequest对象(XHR)。XHR为向服务器发送请求和解析服务器响应提供了接口。能够以异步方式从服务器获取新数据。
+
+```jsp
+<%--
+  Created by IntelliJ IDEA.
+  User: LYJ
+  Date: 2021/7/10
+  Time: 16:35
+  To change this template use File | Settings | File Templates.
+--%>
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<html>
+  <head>
+    <title>$Title$</title>
+<%--    <script src="${pageContext.request.contextPath}/statics/js/jquery-3.6.0.js"></script>--%>
+    <link rel="stylesheet" href="statics/js/jquery-3.6.0.js">
+
+    <script>
+      function test(){
+        $.post({
+          url: "${pageContext.request.contextPath}/test2",
+          data: {"name": $("#username").val()},
+          success: function (data){
+            alert(data);
+          }
+        })
+      }
+    </script>
+
+  </head>
+  <body>
+    <%--失去焦点的时候 发起一个请求到后台--%>
+  用户名：<input type="text" id="username" onclick="test()">
+  </body>
+</html>
+```
+
+
+
+```java
+    @RequestMapping("/t2")
+    public void test2(String name, HttpServletResponse response) throws IOException {
+        System.out.println("test--name==>" + name);
+        if ("yunxiaojie".equals(name)){
+            response.getWriter().print("true");
+        } else {
+            response.getWriter().print("false");
+        }
+    }
+```
+
+## 11、Ajax实例
+
+### 11.1、Ajax加载数据
+
+- 新建一个方法：
+
+  - ```java
+    @RequestMapping("/test3")
+    public List<User> test3(){
+        List<User> list = new ArrayList<>();
+    
+        list.add(new User("云杰1号", 18, "男"));
+        list.add(new User("云杰2号", 23, "男"));
+        list.add(new User("云杰3号", 19, "男"));
+    
+        return list;
+    }
+    ```
+
+- 新建前端页面 `test2.jsp`，测试Ajax
+
+  - ```jsp
+    <%--
+      Created by IntelliJ IDEA.
+      User: LYJ
+      Date: 2021/7/10
+      Time: 19:52
+      To change this template use File | Settings | File Templates.
+    --%>
+    <%@ page contentType="text/html;charset=UTF-8" language="java" %>
+    <html>
+    <head>
+        <title>Title</title>
+    
+        <script src="${pageContext.request.contextPath}/statics/js/jquery-3.6.0.js"></script>
+        <script>
+            $(function (){
+                $("#btn").click(function (){
+                    $.post("${pageContext.request.contextPath}/test3", function (data){
+                        console.log(data);
+                        var html = "";
+                        for (let i = 0; i < data.length; i++) {
+                            html += "<tr>" +
+                            "<td>" + data[i].name + "</td>" +
+                            "<td>" + data[i].age + "</td>" +
+                            "<td>" + data[i].sex + "</td>" +
+                                "</tr>";
+                        }
+                        $("#content").html(html);
+                    })
+                })
+            });
+        </script>
+    
+    </head>
+    <body>
+        <input type="button" value="加载数据" id="btn">
+        <table>
+            <tr>
+                <td>姓名</td>
+                <td>年龄</td>
+                <td>性别</td>
+            </tr>
+            <tbody id="content">
+                <%--数据：后台--%>
+            </tbody>
+        </table>
+    </body>
+    </html>
+    ```
+
+- 测试结果：
+
+  - ![image-20210710201343019](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210710201343019.png)
+
+### 11.2、Ajax注册提示效果
+
+- 新建一个方法来判断输入的用户名和密码
+
+  - ```java
+        @RequestMapping("/test4")
+        public String test4(String name, String pwd){
+            String msg = "";
+            // 以下只是例子，真实数据应该从数据库中获取
+            if (name != null){
+                if ("admin".equals(name)){
+                    msg = "OK";
+                } else {
+                    msg = "用户名有误";
+                }
+            }
+            if (pwd != null) {
+                if ("123456".equals(pwd)) {
+                    msg = "OK";
+                } else {
+                    msg = "密码有误";
+                }
+            }
+            return msg;
+        }
+    ```
+
+- 编写前端的登陆页面 `login.jsp`
+
+  - ```jsp
+    <%@ page contentType="text/html;charset=UTF-8" language="java" %>
+    <html>
+    <head>
+        <title>Title</title>
+        <script src="${pageContext.request.contextPath}/statics/js/jquery-3.6.0.js"></script>
+    
+        <script>
+            function a1(){
+                $.post({
+                    url: "${pageContext.request.contextPath}/test4",
+                    data: {"name": $("#name").val()},
+                    success: function (data){
+                        if (data.toString() === 'OK'){
+                            $("#userInfo").css("color", "green");
+                        } else {
+                            $("#userInfo").css("color", "red");
+                        }
+                        $("#userInfo").html(data);
+                    }
+                })
+            }
+            function a2(){
+                $.post({
+                    url: "${pageContext.request.contextPath}/test4",
+                    data: {"name": $("#pwd").val()},
+                    success: function (data){
+                        if (data.toString() === 'OK'){
+                            $("#pwdInfo").css("color", "green");
+                        } else {
+                            $("#pwdInfo").css("color", "red");
+                        }
+                        $("#userInfo").html(data);
+                    }
+                })
+            }
+        </script>
+    
+    </head>
+    <body>
+        <p>
+            用户名：<input type="text" id="name" onblur="a1()">
+            <span id="userInfo"></span>
+        </p>
+        <p>
+            密码：<input type="password" id="pwd" onblur="a2()">
+            <span id="pwdInfo"></span>
+        </p>
+    </body>
+    </html>
+    ```
+  
+- ![image-20210710212529956](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210710212529956.png)
+
+## 12、拦截器
+
+### 12.1、概述
+
+SpringMVC的处理器拦截器类似于Servlet开发中的过滤器Filter,用于对处理器进行预处理和后处理。开发者可以自己定义一些拦截器来实现特定的功能。
+
+**过滤器与拦截器的区别：**拦截器是AOP思想的具体应用。
+
+**过滤器**
+
+- servlet规范中的一部分，任何java web工程都可以使用
+- 在url-pattern中配置了/*之后，可以对所有要访问的资源进行拦截
+
+**拦截器** 
+
+- 拦截器是SpringMVC框架自己的，只有使用了SpringMVC框架的工程才能使用
+- 拦截器只会拦截访问的**控制器**方法， 如果访问的是jsp/html/css/image/js是不会进行拦截的(**自带静态资源过滤**)
+
+
+
+### 12.2、自定义拦截器
+
+想要自定义拦截器，必须实现 `HandlerInterceptor` 接口。
+
+- 自定义拦截器：
+
+  - ```java
+    public class myInterceptor implements HandlerInterceptor {
+        
+        // true: 放行; false: 不放行
+        @Override
+        public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+            System.out.println("=====================preHandle===============================");
+            return true;
+        }
+    
+        // 拦截日志
+        @Override
+        public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+            System.out.println("=====================postHandle===============================");
+        }
+    
+        @Override
+        public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+            System.out.println("=====================清理===============================");
+        }
+    }
+    
+    ```
+
+- 在核心配置文件 `applicationContext.xml` 中注册：
+
+  - ```xml
+        <!--拦截器配置-->
+        <mvc:interceptors>
+            <mvc:interceptor>
+                <!--/**代表这个请求下面的所有请求, 比如/admin/**代表/admin下面的所有请求, /admin/xxxx-->
+                <mvc:mapping path="/**"/>
+                <bean class="config.myInterceptor"/>
+            </mvc:interceptor>
+        </mvc:interceptors>
+    ```
+
+- 编写测试的控制类：
+
+  - ```java
+    @RestController
+    public class TestController {
+    
+        @RequestMapping("/test1")
+        public String test1(){
+            System.out.println("TestController");
+            return "Test";
+        }
+    }
+    ```
+
+- ![image-20210710215020831](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210710215020831.png)
+
+### 12.3、拦截器实例：登陆判断验证
+
+要实现的功能如下：
+
+- 首先是进入 `index.jsp` 页面，有两个选项：1、主页；2、登陆页面
+- 只有登录才能进行主页；
+- 若未登录直接点击进入主页会被拦截，跳转到登陆页面
+
+
+
+- `index.jsp`
+
+  - ```jsp
+    <%@ page contentType="text/html;charset=UTF-8" language="java" %>
+    <html>
+      <head>
+        <title>$Title$</title>
+      </head>
+      <body>
+      <h1><a href="${pageContext.request.contextPath}/user/toLogin">去登陆页面</a></h1>
+      <h1><a href="${pageContext.request.contextPath}/user/toMain">去首页</a></h1>
+      </body>
+    </html>
+    ```
+
+- 对应的请求处理方法
+
+  - ```java
+    @Controller
+    @RequestMapping("/user")
+    public class loginController {
+    
+        @RequestMapping("/toMain")
+        public String toMain(){
+            return "main";
+        }
+    
+        @RequestMapping("/toLogin")
+        public String toLogin(){
+            return "login";
+        }
+    
+        @RequestMapping("/login")
+        public String Login(String username, String password, HttpSession session){
+            /**
+             * 登陆成功, 跳转到成功页面, 并且把用户的信息存在session中
+             */
+            session.setAttribute("userLoginInfo", username);
+            return "main";
+        }
+    
+        @RequestMapping("/logout")
+        public String loginOut(String username, String password, HttpSession session){
+            /**
+             * 注销
+             */
+            session.removeAttribute("userInfo");
+            return "login";
+        }
+    }
+    ```
+
+- 编写页面：
+
+  - `login.jsp`
+
+    - ```jsp
+      <%@ page contentType="text/html;charset=UTF-8" language="java" %>
+      <html>
+      <head>
+          <title>登陆页面</title>
+      </head>
+      <body>
+      <%--WEB-INF下的所有页面或者资源, 只有通过controller, 或者Servlet进行访问--%>
+          <h1>登陆页面</h1>
+      <form action="${pageContext.request.contextPath}/user/login" method="post">
+          用户名: <input type="text" name="username">
+          密码: <input type="password" name="password">
+          <input type="submit" value="登录">
+      </form>
+      </body>
+      </html>
+      ```
+
+  - `main.jsp`
+
+    - ```jsp
+      <%@ page contentType="text/html;charset=UTF-8" language="java" %>
+      <html>
+      <head>
+          <title>首页</title>
+          <!-- 新 Bootstrap 核心 CSS 文件 -->
+          <link href="https://cdn.staticfile.org/twitter-bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+      
+          <!-- jQuery文件。务必在bootstrap.min.js 之前引入 -->
+          <script src="https://cdn.staticfile.org/jquery/2.1.1/jquery.min.js"></script>
+      
+          <!-- 最新的 Bootstrap 核心 JavaScript 文件 -->
+          <script src="https://cdn.staticfile.org/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+      </head>
+      <body>
+          <div class="alert alert-success" role="alert">${userLoginInfo}好，这是主页</div>
+          <a href="${pageContext.request.contextPath}/user/logout" class="btn btn-danger">注销</a>
+      </body>
+      </html>
+      ```
+
+- 编写拦截器：
+
+  - ```java
+    public class loginInterceptor implements HandlerInterceptor {
+        @Override
+        public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    
+            // 登录可以放行, 此时session中有对象
+            HttpSession session = request.getSession();
+            if (session.getAttribute("userInfo")!=null){
+                return true;
+            }
+            // 或者是直接进入登陆页面, 可以放行
+            if (request.getRequestURI().contains("login")){
+                return true;
+            }
+    
+            // 用户没有登陆跳转到登陆页面
+            request.getRequestDispatcher("/WEB-INF/jsp/login.jsp").forward(request, response);
+            return false;
+        }
+    }
+    ```
+
+- 配置拦截器：
+
+  - ```xml
+        <!--拦截器配置-->
+        <mvc:interceptors>
+            <mvc:interceptor>
+                <!--/**代表这个请求下面的所有请求, 比如/admin/**代表/admin下面的所有请求, /admin/xxxx-->
+                <mvc:mapping path="/**"/>
+                <bean class="config.myInterceptor"/>
+            </mvc:interceptor>
+    
+            <mvc:interceptor>
+                <mvc:mapping path="/user/**"/>
+                <bean class="config.loginInterceptor"/>
+            </mvc:interceptor>
+        </mvc:interceptors>
+    ```
+
+- 效果：
+
+  - ![image-20210711110405480](C:/Users/LYJ/AppData/Roaming/Typora/typora-user-images/image-20210711110405480.png)![image-20210711110414486](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210711110414486.png)
+  - ![image-20210711110508500](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20210711110508500.png)
 
 
 
 
 
+## 13、文件上传和下载
+
+文件上传是项目开发中最常见的功能之一 ,springMVC 可以很好的支持文件上传，但是SpringMVC上下文中默认没有装配`MultipartResolver`，因此默认情况下其不能处理文件上传工作。如果想使用Spring的文件上传功能，则需要在上下文中配置`MultipartResolve`。
+
+**前端表单要求：**为了能上传文件，必须将表单的 method设置为POST，并将 `enctype` 设置为 `multipart/form-data` 。只有在这样的情况下，浏览器才会把用户选择的文件以二进制数据发送给服务器；
 
 
 
+**对表单中的 enctype 属性做个详细的说明：**
 
+- `application/x-www=form-urlencoded`：默认方式，只处理表单域中的 value 属性值，采用这种编码方式的表单会将表单域中的值处理成 URL 编码方式。
+- `multipart/form-data`：这种编码方式会以二进制流的方式来处理表单数据，这种编码方式会把文件域指定文件的内容也封装到请求参数中，不会对字符编码。
+- `text/plain`：除了把空格转换为 "+" 号外，其他字符都不做编码处理，这种方式适用直接通过表单发送邮件
+
+
+
+### 13.1、文件上传
+
+1、导入文件上传的jar包，`commons-fileupload` , Maven会自动帮我们导入他的依赖包 commons-io 包；
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>LearnSpringMVC</artifactId>
+        <groupId>org.example</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>SpringMVC-09-File</artifactId>
+
+    <properties>
+        <maven.compiler.source>16</maven.compiler.source>
+        <maven.compiler.target>16</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- https://mvnrepository.com/artifact/commons-fileupload/commons-fileupload -->
+        <dependency>
+            <groupId>commons-fileupload</groupId>
+            <artifactId>commons-fileupload</artifactId>
+            <version>1.4</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/javax.servlet/javax.servlet-api -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>4.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+</project>
+```
+
+2、配置bean：`multipartResolver`
+
+==**这个bena的id必须为：multipartResolver ， 否则上传文件会报400的错误！**==
+
+```xml
+<!--文件上传配置-->
+<bean id="multipartResolver"  class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+   <!-- 请求的编码格式，必须和jSP的pageEncoding属性一致，以便正确读取表单的内容，默认为ISO-8859-1 -->
+   <property name="defaultEncoding" value="utf-8"/>
+   <!-- 上传文件大小上限，单位为字节（10485760=10M） -->
+   <property name="maxUploadSize" value="10485760"/>
+   <property name="maxInMemorySize" value="40960"/>
+</bean>
+```
+
+`CommonsMultipartFile` 的 常用方法：
+
+- **String getOriginalFilename()：获取上传文件的原名**
+- **InputStream getInputStream()：获取文件流**
+- **void transferTo(File dest)：将上传文件保存到一个目录文件中**
+
+3、编写前端页面
+
+```jsp
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<html>
+  <head>
+    <title>$Title$</title>
+  </head>
+  <body>
+    <form action="/upload" enctype="multipart/form-data" method="post">
+      <input type="file" name="file"/>
+      <input type="submit" value="upload">
+    </form>
+  </body>
+</html>
+```
+
+4、编写上传的方法
+
+方法一：
+
+```java
+//@RequestParam("file") 将name=file控件得到的文件封装成CommonsMultipartFile 对象
+    //批量上传CommonsMultipartFile则为数组即可
+    @RequestMapping("/upload")
+    public String fileUpload(@RequestParam("file") CommonsMultipartFile file , HttpServletRequest request) throws IOException {
+
+        //获取文件名 : file.getOriginalFilename();
+        String uploadFileName = file.getOriginalFilename();
+
+        //如果文件名为空，直接回到首页！
+        if ("".equals(uploadFileName)){
+            return "redirect:/index.jsp";
+        }
+        System.out.println("上传文件名 : "+uploadFileName);
+
+        //上传路径保存设置
+        String path = request.getServletContext().getRealPath("/upload");
+        //如果路径不存在，创建一个
+        File realPath = new File(path);
+        if (!realPath.exists()){
+            realPath.mkdir();
+        }
+        System.out.println("上传文件保存地址："+realPath);
+
+        InputStream is = file.getInputStream(); //文件输入流
+        OutputStream os = new FileOutputStream(new File(realPath,uploadFileName)); //文件输出流
+
+        //读取写出
+        int len=0;
+        byte[] buffer = new byte[1024];
+        while ((len=is.read(buffer))!=-1){
+            os.write(buffer,0,len);
+            os.flush();
+        }
+        os.close();
+        is.close();
+        return "redirect:/index.jsp";
+    }
+```
+
+方法二：
+
+```java
+@RequestMapping("/upload2")
+    public String  fileUpload2(@RequestParam("file") CommonsMultipartFile file, HttpServletRequest request) throws IOException {
+
+        //上传路径保存设置
+        String path = request.getServletContext().getRealPath("/upload");
+        File realPath = new File(path);
+        if (!realPath.exists()){
+            realPath.mkdir();
+        }
+        //上传文件地址
+        System.out.println("上传文件保存地址："+realPath);
+
+        //通过CommonsMultipartFile的方法直接写文件（注意这个时候）
+        file.transferTo(new File(realPath +"/"+ file.getOriginalFilename()));
+
+        return "redirect:/index.jsp";
+    }
+```
+
+4、下载
+
+```java
+@RequestMapping(value="/download")
+    public String downloads(HttpServletResponse response , HttpServletRequest request) throws Exception{
+        //要下载的图片地址
+        String  path = request.getServletContext().getRealPath("/upload");
+        String  fileName = "基础语法.jpg";
+
+        //1、设置response 响应头
+        response.reset(); //设置页面不缓存,清空buffer
+        response.setCharacterEncoding("UTF-8"); //字符编码
+        response.setContentType("multipart/form-data"); //二进制传输数据
+        //设置响应头
+        response.setHeader("Content-Disposition",
+                "attachment;fileName="+ URLEncoder.encode(fileName, "UTF-8"));
+
+        File file = new File(path,fileName);
+        //2、 读取文件--输入流
+        InputStream input=new FileInputStream(file);
+        //3、 写出文件--输出流
+        OutputStream out = response.getOutputStream();
+
+        byte[] buff =new byte[1024];
+        int index=0;
+        //4、执行 写出操作
+        while((index= input.read(buff))!= -1){
+            out.write(buff, 0, index);
+            out.flush();
+        }
+        out.close();
+        input.close();
+        return null;
+    }
+```
 
