@@ -1,0 +1,27 @@
+# Site settings
+name: 云小杰的博客
+email: 17804331763@163.com
+author: Philyxj
+url: https://github.com/meiguiyulu
+resume_site: https://github.com/meiguiyulu
+github: https://github.com/meiguiyulu
+baseurl: ""  #根目录
+description: 相对于绝对成功的汲汲渴求，越无杂质的奔赴，越是动人。
+motto: 是你眉眼动人，惹我半生风雪。
+#motto: 如果生活欺骗了你，不要悲伤，不要哭泣。
+banner: 要一个黄昏, 满是风, 和正在落下的夕阳。如此, 足够我爱这破碎泥泞的人间。
+#permalink: /:categories/:year/:month/:day/:title/
+permalink: /:year/:month/:day/:title/
+excerpt_separator:  '<!-- more -->' #文章摘要
+paginate: 8
+paginate_path: "page:num"
+gems: [jekyll-paginate]
+exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
+github_username: maoxiaoke
+highlighter: rouge
+markdown: kramdown
+FB:
+  comments :
+    provider : disqus
+    disqus :
+        short_name : Philyxj
