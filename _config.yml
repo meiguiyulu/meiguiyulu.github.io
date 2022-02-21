@@ -1,27 +1,49 @@
-# Site settings
-name: 云小杰的博客
-email: 17804331763@163.com
-author: Philyxj
-url: https://github.com/meiguiyulu
-resume_site: https://github.com/meiguiyulu
-github: https://github.com/meiguiyulu
-baseurl: ""  #根目录
-description: 相对于绝对成功的汲汲渴求，越无杂质的奔赴，越是动人。
-motto: 是你眉眼动人，惹我半生风雪。
-#motto: 如果生活欺骗了你，不要悲伤，不要哭泣。
-banner: 要一个黄昏, 满是风, 和正在落下的夕阳。如此, 足够我爱这破碎泥泞的人间。
-#permalink: /:categories/:year/:month/:day/:title/
-permalink: /:year/:month/:day/:title/
-excerpt_separator:  '<!-- more -->' #文章摘要
-paginate: 8
-paginate_path: "page:num"
-gems: [jekyll-paginate]
-exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
-github_username: maoxiaoke
+# Basic
+title: 云小杰
+subtitle: 相对于绝对成功的汲汲渴求，越无杂质的奔赴，越是动人。
+welcome_message: <a href="https://github.com/meiguiyulu" target="_blank">Download the theme</a>
+description: 要一个黄昏, 满是风, 和正在落下的夕阳。如此, 足够我爱这破碎泥泞的人间。
+creator: <a href="https://github.com/meiguiyulu">云小杰</a>
+
+url: "http://vno.onevcat.com"
+
+permalink: /:year/:month/:title/
+
+# Format
 highlighter: rouge
-markdown: kramdown
-FB:
-  comments :
-    provider : disqus
-    disqus :
-        short_name : Philyxj
+
+# supported colors: blue, green, purple, red, orange or slate. If you need clear, leave it empty.
+cover_color:
+
+# The blog button should not be removed.
+blog_button:
+    title: Blog
+    description: Visit blog
+
+# Navigation buttons in the front page.
+nav:
+    - {title: Github, description: My Github, url: 'https://github.com/meiguiyulu'}
+    # - {title: Another Button, description: A button, url: 'http://example.com'}
+
+# Pagination
+plugins: [jekyll-paginate]
+paginate: 10
+paginate_path: "page/:num/"
+
+# Comment
+comment:
+    disqus: 云小杰
+    # duoshuo: 
+    
+# Social
+social:
+    weibo: #
+    github: meiguiyulu
+    twitter: #
+    gplus: 107108267983477358170
+    mail: 17804331763@163.com
+
+# Google Analytics
+ga:
+    # id: your_ga_id
+    # host: your_host

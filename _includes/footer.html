@@ -1,17 +1,7 @@
-<footer class="footer" role="contentinfo">
-	<!--不蒜子pv/uv统计-->
-	<div class="post-meta">
-            <p>Total <span id="busuanzi_value_site_pv"></span> views，您是本站的第<span id="busuanzi_value_site_uv"></span>个小伙伴，<span id="busuanzi_value_page_pv"></span> Hits</p><br/>
-    </div>
-	<div class="container">
-		<p class="copyright">Copyright &copy; {{ site.time | date: '%Y' }} <a href="{{site.resume_site}}" target="_blank"><code>{{ site.author }}</code></a>. All rights reserved. </p>
-		<p>Powered by <a href="http://jekyllrb.com" target="_blank">Jekyll</a>， Data by <a href="https://tongji.baidu.com/web/23811489/overview/index" target="_blank">Bai Du</a>.</p>
-	</div>
-	<ul id="gotop"><li><span>TOP</span></li></ul>
-</footer>
-<script src="http://apps.bdimg.com/libs/jquery/1.11.3/jquery.min.js"></script>
-<script src="http://apps.bdimg.com/libs/bootstrap/3.3.4/js/bootstrap.min.js"></script>
-<script async src="//dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js"></script>
-<script src="{{ '/styles/js/function.min.js' | prepend: site.baseurl }}"></script>
-<script src="{{ '/styles/js/lessismore.js' | prepend: site.baseurl }}"></script>
-<script src="{{ '/styles/js/application.min.js' | prepend: site.baseurl }}"></script>
+<section class="footer">
+    <footer>
+    	<span class="footer__copyright">本站点采用<a href="http://creativecommons.org/licenses/by-nc-sa/4.0/">知识共享 署名-非商业性使用-相同方式共享 4.0 国际 许可协议</a></span>
+        <span class="footer__copyright">由 <a href="https://jekyllrb.com">Jekyll</a> 于 {{ site.time | date: "%F" }} 生成，感谢 <a href="https://www.digitalocean.com/?refcode=30ed2d146762">Digital Ocean</a> 为本站提供稳定的 VPS 服务</span>
+        <span class="footer__copyright">本站{% if site.creator %}由 {{site.creator}} 创建，{% endif %}采用 <a href="https://github.com/onevcat/vno-jekyll">Vno - Jekyll</a> 作为主题，您可以在 GitHub 找到<a href="https://github.com/onevcat/OneV-s-Den">本站源码</a> - &copy; {{site.time | date: "%Y"}}</span>
+    </footer>
+</section>
