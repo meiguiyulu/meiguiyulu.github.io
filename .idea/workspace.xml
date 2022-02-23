@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5aace1fe-eb98-47aa-9ea3-67c06e5b71d0" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/_posts/2022-02-21- 移除元素.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/_posts/2022-02-21-删除元素中的重复项.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="5aace1fe-eb98-47aa-9ea3-67c06e5b71d0" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -48,7 +44,7 @@
       <updated>1645272899768</updated>
       <workItem from="1645272902239" duration="608000" />
       <workItem from="1645438038999" duration="1081000" />
-      <workItem from="1645445396598" duration="1948000" />
+      <workItem from="1645445396598" duration="2545000" />
     </task>
     <servers />
   </component>
