@@ -3595,4 +3595,462 @@ Elasticsearch基于Lucene，这个java库引入了**按段搜索**的概念。�
 
 **文档更新**也是类似的操作方式：当一个文档被更新时，旧版本文档被标记删除，文档的新版本被索引到一个新的段中。可能两个版本的文档都会被一个查询匹配到，但被删除的那个旧版本文档在结果集返回前就已经被移除。
 
-### 4.10 文档刷新&文档刷新
+### 4.10 文档刷新 & 文档刷写 & 文档合并
+
+![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/b3b31c1e592d5aa794e7c9fcb259c924.png)
+
+![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/521c25f0f16247240234d1b8eb3c5f25.png)
+
+#### 4.10.1 近实时搜索
+
+随着按段（per-segment）搜索的发展，一个新的文档从索引到可被搜索的延迟显著降低了。新文档在几分钟之内即可被检索，但这样还是不够快。磁盘在这里成为了瓶颈。**提交`(Commiting)`一个新的段到磁盘需要一个`fsync` 来确保段被物理性地写入磁盘**，这样在断电的时候就不会丢失数据。但是fsync操作代价很大；如果每次索引一个文档都去执行一次的话会造成很大的性能问题。
+
+我们需要的是一个更轻量的方式来使一个文档可被搜索，这意味着 `fsync` 要从整个过程中被移除。在`Elasticsearch` 和磁盘之间是**文件系统缓存**。像之前描述的一样，在内存索引缓冲区中的文档会被写入到一个新的段中。但是这里新段会被先写入到文件系统缓存----这一步代价会比较低，稍后再被刷新到磁盘----这一步代价比较高。不过只要文件已经在缓存中，就可以像其它文件一样被打开和读取了。
+
+
+#### 4.10.2 持久化变更
+
+如果没有用 `fsync` 把数据从文件系统缓存刷`(flush)`到硬盘，我们不能保证数据在断电甚至是程序正常退出之后依然存在。为了保证Elasticsearch 的可靠性，需要确保数据变化被持久化到磁盘。在动态更新索引，我们说一次完整的提交会将段刷到磁盘，并写入一个包含所有段列表的提交点。`Elasticsearch` 在启动或重新打开一个索引的过程中使用这个提交点来判断哪些段隶属于当前分片。
+
+即使通过每秒刷新 `(refresh)`实现了近实时搜索，我们仍然需要经常进行完整提交来确保能从失败中恢复。但在两次提交之间发生变化的文档怎么办?我们也不希望丢失掉这些数据。`Elasticsearch` 增加了一个 `translog` ，或者叫事务日志，在每一次对 `Elasticsearch` 进行操作时均进行了日志记录。
+
+**整个流程如下：**
+
+1. 一个文档被索引之后，就会被添加到内存缓冲区，并且追加到了 `translog`
+   - ![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/baeab48c8d6b87660ac4fb954e9c9731.png)
+2. 刷新 `(refresh)`使分片每秒被刷新 `(refresh)`一次：
+   - 这些在内存缓冲区的文档被写入到一个新的段中，且没有进行 `fsync` 操作。
+   - 这个段被打开，使其可被搜索。
+   - 内存缓冲区被清空。
+   - ![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/17be4247e6b23f31b1e589c70d61e817.png)
+3. 这个进程继续工作，更多的文档被添加到内存缓冲区和追加到事务日志。
+   - ![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/4b5c4a3a3ffb4c84625bb283f6a67018.png)
+4. 每隔一段时间—例如 `translog` 变得越来越大，索引被刷新`(flush)`；一个新的 `translog`被创建，并且一个全量提交被执行。
+   - 所有在内存缓冲区的文档都被写入一个新的段。
+   - 缓冲区被清空。
+   - 一个提交点被写入硬盘。
+   - 文件系统缓存通过 `fsync` 被刷新`(flush)` 。
+   - 老的 `translog` 被删除
+
+`translog` 提供所有还没有被刷到磁盘的操作的一个持久化纪录。当 `Elasticsearch` 启动的时候，它会从磁盘中使用最后一个提交点去恢复己知的段，并且会重放 `translog` 中所有在最后一次提交后发生的变更操作。
+
+`translog` 也被用来提供实时 `CRUD`。当你试着通过 `ID` 查询、更新、删除一个文档，它会在尝试从相应的段中检索之前，首先检查 `translog` 任何最近的变更。这意味着它总是能够实时地获取到文档的最新版本。
+
+![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/11c7d2cc05244e669eb8402dd8049de9.png)
+
+执行一个提交并且截断 `translog` 的行为在 `Elasticsearch` 被称作一次 `flush` 。分片每30分钟被自动刷新`(flush)`，或者在 `translog` 太大的时候也会刷新。
+
+你很少需要自己手动执行 `flush` 操作，通常情况下，自动刷新就足够了。这就是说，在重启节点或关闭索引之前执行 `flush` 有益于你的索引。当 `Elasticsearch` 尝试恢复或重新打开一个索引，它需要重放 `translog` 中所有的操作，所以如果日志越短，恢复越快。
+
+`translog` 的目的是保证操作不会丢失，在文件被 `fsync` 到磁盘前，被写入的文件在重启之后就会丢失。默认`translog` 是每5秒被 `fsync` 刷新到硬盘，或者在每次写请求完成之后执行`(e.g. index, delete, update, bulk)`。这个过程在主分片和复制分片都会发生。最终，基本上，这意味着在整个请求被 `fsync` 到主分片和复制分片的 `translog` 之前，你的客户端不会得到一个200 OK响应。
+
+在每次请求后都执行一个 `fsync` 会带来一些性能损失，尽管实践表明这种损失相对较小（特别是 `bulk` 导入，它在一次请求中平摊了大量文档的开销）。
+
+但是对于一些大容量的偶尔丢失几秒数据问题也并不严重的集群，使用异步的 `fsync` 还是比较有益的。比如，写入的数据被缓存到内存中，再每5秒执行一次 `fsync` 。如果你决定使用异步 `translog` 的话，你需要保证在发生 `crash` 时，丢失掉 `sync_interval` 时间段的数据也无所谓。请在决定前知晓这个特性。如果你不确定这个行为的后果，最好是使用默认的参数 `{“index.translog.durability”: “request”}` 来避免数据丢失。
+
+#### 4.10.3 段合并
+
+由于自动刷新流程每秒会创建一个新的段，这样会导致短时间内的段数量暴增。而段数目太多会带来较大的麻烦。每一个段都会消耗文件句柄、内存和 `cpu` 运行周期。更重要的是，每个搜索请求都必须轮流检查每个段；所以段越多，搜索也就越慢。
+
+`Elasticsearch` 通过在后台进行段合并来解决这个问题。小的段被合并到大的段，然后这些大的段再被合并到更大的段。
+
+段合并的时候会将那些旧的已删除文档从文件系统中清除。被删除的文档（或被更新文档的旧版本）不会被拷贝到新的大段中。
+
+启动段合并不需要你做任何事。进行索引和搜索时会自动进行。
+
+1. 当索引的时候，刷新`(refresh)`操作会创建新的段并将段打开以供搜索使用。
+2. 合并进程选择一小部分大小相似的段，并且在后台将它们合并到更大的段中。这并不会中断索引和搜索
+   - ![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/c907ca35bd7c0393d46aec2c7038af19.png)
+3. 一旦合并结束，老的段被删除
+   - 新的段被刷新 `(flush)` 到了磁盘。
+   - 写入一个包含新段且排除旧的和较小的段的新提交点。
+   - 新的段被打开用来搜索。老的段被删除。
+   - ![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/a00cc1c19652c47fcfb663aaf337a41b.png)
+
+
+
+### 4.11 文档分析
+
+分析包含下面的过程：
+
+- 将一块文本分成适合于倒排索引的独立的词条。
+- 将这些词条统一化为标准格式以提高它们的“可搜索性”，或者recall。
+
+分析器执行上面的工作。分析器实际上是将三个功能封装到了一个包里：
+
+- 字符过滤器：首先，字符串按顺序通过每个 字符过滤器 。他们的任务是在分词前整理字符串。一个字符过滤器可以用来去掉 HTML，或者将 & 转化成 and。
+- 分词器：其次，字符串被分词器分为单个的词条。一个简单的分词器遇到空格和标点的时候，可能会将文本拆分成词条。
+- Token 过滤器：最后，词条按顺序通过每个 token 过滤器 。这个过程可能会改变词条（例如，小写化Quick ），删除词条（例如， 像 a， and， the 等无用词），或者增加词条（例如，像jump和leap这种同义词）
+
+#### 4.11.1 内置分析器
+
+`Elasticsearch` 还附带了可以直接使用的预包装的分析器。接下来我们会列出最重要的分析器。为了证明它们的差异，我们看看每个分析器会从下面的字符串得到哪些词条：
+
+```markdown
+"Set the shape to semi-transparent by calling set_trans(5)"
+```
+
+- 标准分词器
+
+  - 标准分析器是 `Elasticsearch` 默认使用的分析器。它是分析各种语言文本最常用的选择。它根据Unicode 联盟定义的单词边界划分文本。删除绝大部分标点。最后，将词条小写。它会产生：
+
+  - ```markdown
+    set, the, shape, to, semi, transparent, by, calling, set_trans, 5
+    ```
+
+- 简单分词器
+
+  - 简单分析器在任何不是字母的地方分隔文本，将词条小写。它会产生：
+
+  - ```markdown
+    set, the, shape, to, semi, transparent, by, calling, set, trans
+    ```
+
+- 空格分词器
+
+  - 空格分析器在空格的地方划分文本。它会产生:
+
+  - ```markdown
+    Set, the, shape, to, semi-transparent, by, calling, set_trans(5)
+    ```
+
+- 语言分析器
+
+  - 特定语言分析器可用于很多语言。它们可以考虑指定语言的特点。例如，英语分析器附带了一组英语无用词（常用单词，例如and或者the ,它们对相关性没有多少影响），它们会被删除。由于理解英语语法的规则，这个分词器可以提取英语单词的词干
+
+  - ```markdown
+    set, shape, semi, transpar, call, set_tran, 5
+    ```
+
+  - transparent、calling和 set_trans已经变为词根格式。
+
+#### 4.11.2 分析器使用场景
+
+当我们索引一个文档，它的全文域被分析成词条以用来创建倒排索引。但是，当我们在全文域搜索的时候，我们需要将查询字符串通过相同的分析过程，以保证我们搜索的词条格式与索引中的词条格式一致。
+
+全文查询，理解每个域是如何定义的，因此它们可以做正确的事：
+
+- 当你查询一个全文域时，会对查询字符串应用相同的分析器，以产生正确的搜索词条列表。
+
+- 当你查询一个精确值域时，不会分析查询字符串，而是搜索你指定的精确值。
+  
+
+#### 4.11.3 测试分析器
+
+有些时候很难理解分词的过程和实际被存储到索引中的词条，特别是你刚接触 `Elasticsearch`。为了理解发生了什么，你可以使用 `analyze API` 来看文本是如何被分析的。在消息体里，指定分析器和要分析的文本。
+
+```json
+#GET http://localhost:9200/_analyze
+{
+    "analyzer": "standard",
+    "text": "Text to analyze"
+}
+```
+
+结果中每个元素代表一个单独的词条：
+
+```json
+{
+    "tokens": [
+        {
+            "token": "text", 
+            "start_offset": 0, 
+            "end_offset": 4, 
+            "type": "<ALPHANUM>", 
+            "position": 1
+        }, 
+        {
+            "token": "to", 
+            "start_offset": 5, 
+            "end_offset": 7, 
+            "type": "<ALPHANUM>", 
+            "position": 2
+        }, 
+        {
+            "token": "analyze", 
+            "start_offset": 8, 
+            "end_offset": 15, 
+            "type": "<ALPHANUM>", 
+            "position": 3
+        }
+    ]
+}
+```
+
+- `token` 是实际存储到索引中的词条。
+- `start_ offset` 和 `end_ offset` 指明字符在原始字符串中的位置。
+- `position` 指明词条在原始文本中出现的位置。
+
+#### 4.11.4 指定分析器
+
+​		当 `Elasticsearch` 在你的文档中检测到一个新的字符串域，它会自动设置其为一个全文字符串域，使用标准分析器对它进行分析。你不希望总是这样。可能你想使用一个不同的分析器，适用于你的数据使用的语言。有时候你想要一个字符串域就是一个字符串域，不使用分析，直接索引你传入的精确值，例如用户 ID 或者一个内部的状态域或标签。要做到这一点，我们必须手动指定这些域的映射。
+
+#### 4.11.5 IK分析器
+
+`Elasticsearch` 的一个插件。
+
+```json
+{
+    "tokens": [
+        {
+            "token": "测试", 
+            "start_offset": 0, 
+            "end_offset": 2, 
+            "type": "CN_WORD", 
+            "position": 0
+        }, 
+        {
+            "token": "单词", 
+            "start_offset": 2, 
+            "end_offset": 4, 
+            "type": "CN_WORD", 
+            "position": 1
+        }
+    ]
+}
+```
+
+
+
+#### 4.11.6 自定义分析器
+
+```json
+#PUT http://localhost:9200/my_index
+
+{
+    "settings": {
+        "analysis": {
+            "char_filter": {
+                "&_to_and": {
+                    "type": "mapping", 
+                    "mappings": [
+                        "&=> and "
+                    ]
+                }
+            }, 
+            "filter": {
+                "my_stopwords": {
+                    "type": "stop", 
+                    "stopwords": [
+                        "the", 
+                        "a"
+                    ]
+                }
+            }, 
+            "analyzer": {
+                "my_analyzer": {
+                    "type": "custom", 
+                    "char_filter": [
+                        "html_strip", 
+                        "&_to_and"
+                    ], 
+                    "tokenizer": "standard", 
+                    "filter": [
+                        "lowercase", 
+                        "my_stopwords"
+                    ]
+                }
+            }
+        }
+    }
+}
+```
+
+索引被创建以后，使用 analyze API 来 测试这个新的分析器：
+
+```json
+# GET http://127.0.0.1:9200/my_index/_analyze
+{
+    "text":"The quick & brown fox",
+    "analyzer": "my_analyzer"
+}
+```
+
+返回结果为：
+
+```json
+{
+    "tokens": [
+        {
+            "token": "quick",
+            "start_offset": 4,
+            "end_offset": 9,
+            "type": "<ALPHANUM>",
+            "position": 1
+        },
+        {
+            "token": "and",
+            "start_offset": 10,
+            "end_offset": 11,
+            "type": "<ALPHANUM>",
+            "position": 2
+        },
+        {
+            "token": "brown",
+            "start_offset": 12,
+            "end_offset": 17,
+            "type": "<ALPHANUM>",
+            "position": 3
+        },
+        {
+            "token": "fox",
+            "start_offset": 18,
+            "end_offset": 21,
+            "type": "<ALPHANUM>",
+            "position": 4
+        }
+    ]
+}
+```
+
+### 4.12 文档控制
+
+#### 4.12.1 文档冲突
+
+当我们使用 `index API` 更新文档，可以一次性读取原始文档，做我们的修改，然后重新索引整个文档。最近的索引请求将获胜：无论最后哪一个文档被索引，都将被唯一存储在 `Elasticsearch` 中。如果其他人同时更改这个文档，他们的更改将丢失。
+
+很多时候这是没有问题的。也许我们的主数据存储是一个关系型数据库，我们只是将数据复制到Elasticsearch中并使其可被搜索。也许两个人同时更改相同的文档的几率很小。或者对于我们的业务来说偶尔丢失更改并不是很严重的问题。
+
+但有时丢失了一个变更就是非常严重的。试想我们使用 `Elasticsearch` 存储我们网上商城商品库存的数量，每次我们卖一个商品的时候，我们在 `Elasticsearch` 中将库存数量减少。有一天，管理层决定做一次促销。突然地，我们一秒要卖好几个商品。假设有两个 `web` 程序并行运行，每一个都同时处理所有商品的销售。
+
+![img](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/49ca2ec50db3ddd0fcd1f364ac600b96.png)
+
+`web_1` 对 `stock_count` 所做的更改已经丢失，因为 `web_2` 不知道它的 `stock_count` 的拷贝已经过期。结果我们会认为有超过商品的实际数量的库存，因为卖给顾客的库存商品并不存在，我们将让他们非常失望。
+
+变更越频繁，读数据和更新数据的间隙越长，也就越可能丢失变更。在数据库领域中，有两种方法通常被用来确保并发更新时变更不会丢失：
+
+- 悲观并发控制：这种方法被关系型数据库广泛使用，它假定有变更冲突可能发生，因此阻塞访问资源以防止冲突。一个典型的例子是读取一行数据之前先将其锁住，确保只有放置锁的线程能够对这行数据进行修改。
+- 乐观并发控制：Elasticsearch 中使用的这种方法假定冲突是不可能发生的，并且不会阻塞正在尝试的操作。然而，如果源数据在读写当中被修改，更新将会失败。应用程序接下来将决定该如何解决冲突。例如，可以重试更新、使用新的数据、或者将相关情况报告给用户。
+
+#### 4.12.2 乐观并发控制
+
+`Elasticsearch` 是分布式的。当文档创建、更新或删除时，新版本的文档必须复制到集群中的其他节点。`Elasticsearch` 也是异步和并发的，这意味着这些复制请求被并行发送，并且到达目的地时也许顺序是乱的。`Elasticsearch` 需要一种方法确保文档的旧版本不会覆盖新的版本。
+
+当我们之前讨论 `index`  , `GET` 和 `DELETE` 请求时，我们指出每个文档都有一个 `_version(版本号)`，当文档被修改时版本号递增。`Elasticsearch` 使用这个 `version` 号来确保变更以正确顺序得到执行。如果旧版本的文档在新版本之后到达，它可以被简单的忽略。
+
+我们可以利用 `version` 号来确保应用中相互冲突的变更不会导致数据丢失。我们通过指定想要修改文档的 version号来达到这个目的。如果该版本不是当前版本号，我们的请求将会失败。
+
+老的版本 `es` 使用 `version`，但是新版本不支持了，会报下面的错误，提示我们用 `if_seq _no` 和 `if _primary_term`。
+
+- 创建索引
+
+  - ```bash
+    #PUT http://127.0.0.1:9200/shopping/_create/1001
+    ```
+
+- 返回结果
+
+  - ```json
+    {
+        "_index": "shopping",
+        "_type": "_doc",
+        "_id": "1001",
+        "_version": 1,
+        "result": "created",
+        "_shards": {
+            "total": 2,
+            "successful": 1,
+            "failed": 0
+        },
+        "_seq_no": 10,
+        "_primary_term": 15
+    }
+    ```
+
+- 更新数据
+
+  - ```json
+    #POST http://127.0.0.1:9200/shopping/_update/1001
+    {
+        "doc":{
+            "title":"华为手机"
+        }
+    }
+    ```
+
+- 返回结果
+
+  - ```json
+    {
+        "_index": "shopping",
+        "_type": "_doc",
+        "_id": "1001",
+        "_version": 2,
+        "result": "updated",
+        "_shards": {
+            "total": 2,
+            "successful": 1,
+            "failed": 0
+        },
+        "_seq_no": 11,
+        "_primary_term": 15
+    }
+    ```
+
+- 防止冲突更新方法
+
+  - ```json
+    #POST http://127.0.0.1:9200/shopping/_update/1001?if_seq_no=11&if_primary_term=15
+    {
+        "doc":{
+            "title":"华为手机2"
+        }
+    }
+    ```
+
+- 返回结果
+
+  - ```json
+    {
+        "_index": "shopping",
+        "_type": "_doc",
+        "_id": "1001",
+        "_version": 3,
+        "result": "updated",
+        "_shards": {
+            "total": 2,
+            "successful": 1,
+            "failed": 0
+        },
+        "_seq_no": 12,
+        "_primary_term": 16
+    }
+    ```
+
+#### 4.12.3 外部系统版本控制
+
+一个常见的设置是使用其它数据库作为主要的数据存储，使用 `Elasticsearch` 做数据检索，这意味着主数据库的所有更改发生时都需要被复制到 `Elasticsearch`，如果多个进程负责这一数据同步，你可能遇到类似于之前描述的并发问题。
+
+如果你的主数据库已经有了版本号，或一个能作为版本号的字段值比如 `timestamp`，那么你就可以在 Elasticsearch 中通过增加 `version_type=extermal` 到查询字符串的方式重用这些相同的版本号，版本号必须是大于零的整数，且小于 `9.2E+18`，一个 `Java` 中 `long` 类型的正值。
+
+外部版本号的处理方式和我们之前讨论的内部版本号的处理方式有些不同，`Elasticsearch` 不是检查当前`_version` 和请求中指定的版本号是否相同，而是检查当前`_version` 是否小于指定的版本号。如果请求成功，外部的版本号作为文档的新 `_version` 进行存储。
+
+```json
+#POST http://127.0.0.1:9200/shopping/_doc/1001?version=300&version_type=external
+{
+	"title":"华为手机2"
+}
+```
+
+返回结果：
+
+```json
+{
+    "_index": "shopping",
+    "_type": "_doc",
+    "_id": "1001",
+    "_version": 300,
+    "result": "updated",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 13,
+    "_primary_term": 16
+}
+```
+
+### 4.13 Kibaba
+
+`Kibana` 是一个免费且开放的用户界面，能够让你对 `Elasticsearch` 数据进行可视化，并让你在 `Elastic Stack `中进行导航。你可以进行各种操作，从跟踪查询负载，到理解请求如何流经你的整个应用，都能轻松完成。
