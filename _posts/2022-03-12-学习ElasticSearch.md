@@ -4054,3 +4054,820 @@ Elasticsearch基于Lucene，这个java库引入了**按段搜索**的概念。�
 ### 4.13 Kibaba
 
 `Kibana` 是一个免费且开放的用户界面，能够让你对 `Elasticsearch` 数据进行可视化，并让你在 `Elastic Stack `中进行导航。你可以进行各种操作，从跟踪查询负载，到理解请求如何流经你的整个应用，都能轻松完成。
+
+## 5. Elasticsearch继承
+
+### 5.1 Spring Data框架集成
+
+#### 5.1.1 什么是Spring Data
+
+​		`Spring Data` 是一个用于简化数据库、非关系型数据库、索引库访问，并支持云服务的开源框架。其主要目标是使得对数据的访问变得方便快捷，并支持 `map-reduce` 框架和云计算数据服务。`Spring Data` 可以极大的简化 `JPA(Elasticsearch…)` 的写法，可以在几乎不用写实现的情况下，实现对数据的访问和操作。除了 `CRUD ` 外，还包括如分页、排序等一些常用的功能。
+
+官网：[`Spring Data`](https://spring.io/projects/spring-data)
+
+#### 5.1.2 Spring Data Elasticsearch 介绍
+
+​		`Spring Data Elasticsearch` 基于 `Spring Data API` 简化 `Elasticsearch` 操作，将原始操作`Elasticsearch` 的客户端 `API` 进行封装。`Spring Data` 为 `Elasticsearch` 项目提供集成搜索引擎。`Spring Data Elasticsearch POJO` 的关键功能区域为中心的模型与 `Elastichsearch` 交互文档和轻松地编写一个存储索引库数据访问层。
+
+官网：[`Spring Data Elasticsearch`](https://spring.io/projects/spring-data-elasticsearch)。
+
+#### 5.1.3 SpringData-代码功能集成
+
+1. 新建 SpringBoot 项目
+
+2. 添加依赖关系
+
+   - ```xml
+     <?xml version="1.0" encoding="UTF-8"?>
+     <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         <modelVersion>4.0.0</modelVersion>
+         <parent>
+             <groupId>org.springframework.boot</groupId>
+             <artifactId>spring-boot-starter-parent</artifactId>
+             <version>2.3.6.RELEASE</version>
+             <relativePath/> <!-- lookup parent from repository -->
+         </parent>
+         <groupId>com.lyj</groupId>
+         <artifactId>es-springboot</artifactId>
+         <version>0.0.1-SNAPSHOT</version>
+         <name>es-springboot</name>
+         <description>es-springboot</description>
+         <properties>
+             <java.version>11</java.version>
+         </properties>
+         <dependencies>
+             <dependency>
+                 <groupId>org.springframework.boot</groupId>
+                 <artifactId>spring-boot-starter-web</artifactId>
+             </dependency>
+     
+             <dependency>
+                 <groupId>org.projectlombok</groupId>
+                 <artifactId>lombok</artifactId>
+                 <optional>true</optional>
+             </dependency>
+             <dependency>
+                 <groupId>org.springframework.boot</groupId>
+                 <artifactId>spring-boot-starter-test</artifactId>
+                 <scope>test</scope>
+             </dependency>
+             <dependency>
+                 <groupId>org.springframework.boot</groupId>
+                 <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
+             </dependency>
+             <dependency>
+                 <groupId>org.springframework.boot</groupId>
+                 <artifactId>spring-boot-test</artifactId>
+             </dependency>
+             <dependency>
+                 <groupId>junit</groupId>
+                 <artifactId>junit</artifactId>
+             </dependency>
+             <dependency>
+                 <groupId>org.springframework</groupId>
+                 <artifactId>spring-test</artifactId>
+             </dependency>
+         </dependencies>
+     
+         <build>
+             <plugins>
+                 <plugin>
+                     <groupId>org.springframework.boot</groupId>
+                     <artifactId>spring-boot-maven-plugin</artifactId>
+                     <configuration>
+                         <excludes>
+                             <exclude>
+                                 <groupId>org.projectlombok</groupId>
+                                 <artifactId>lombok</artifactId>
+                             </exclude>
+                         </excludes>
+                     </configuration>
+                 </plugin>
+             </plugins>
+         </build>
+     
+     </project>
+     ```
+
+3. 新建实体类 `Product.java`
+
+   - ```java
+     @Data
+     @Document(indexName = "product", shards = 3, replicas = 1) // 索引名称 product 主分片 3个 副本 1个
+     public class Product {
+         //必须有 id,这里的 id 是全局唯一的标识，等同于 es 中的"_id"
+         @Id
+         private Long id;//商品唯一标识
+     
+         /**
+          * type : 字段数据类型
+          * analyzer : 分词器类型
+          * index : 是否索引(默认:true)
+          * Keyword : 短语,不进行分词
+          */
+         @Field(type = FieldType.Text, analyzer = "ik_max_word")
+         private String title;//商品名称
+     
+         @Field(type = FieldType.Keyword)
+         private String category;//分类名称
+     
+         @Field(type = FieldType.Double)
+         private Double price;//商品价格
+     
+         @Field(type = FieldType.Keyword, index = false)
+         private String images;//图片地址
+     }
+     ```
+
+4. 新建配置类 `ElasticsearchConfig.java`
+
+   - ```java
+     @Configuration
+     @Data
+     public class ElasticsearchConfig extends AbstractElasticsearchConfiguration {
+     
+         private String host = "127.0.0.1";
+         private Integer port = 9200;
+     
+         @Override
+         public RestHighLevelClient elasticsearchClient() {
+             RestClientBuilder builder = RestClient.builder(new HttpHost(host, port));
+             RestHighLevelClient restHighLevelClient = new
+                     RestHighLevelClient(builder);
+             return restHighLevelClient;
+         }
+     }
+     ```
+
+5. DAO 数据访问对象 `ProductDao.java`
+
+   - ```java
+     @Repository
+     public interface ProductDao extends ElasticsearchRepository<Product, Long> {
+     }
+     ```
+
+> 配置类
+
+- `ElasticsearchRestTemplate` 是 `spring-data-elasticsearch` 项目中的一个类，和其他 `spring` 项目中的 `template` 类似。
+- 在新版的 `spring-data-elasticsearch` 中，`ElasticsearchRestTemplate` 代替了原来的`ElasticsearchTemplate`。
+- 原因是 `ElasticsearchTemplate` 基于 `TransportClient`，`TransportClient`即将在 `8.x` 以后的版本中移除。所以，我们推荐使用 `ElasticsearchRestTemplate`。
+- `ElasticsearchRestTemplate` 基于 `RestHighLevelClient` 客户端的。需要自定义配置类，继承`AbstractElasticsearchConfiguration`，并实现 `elasticsearchClient()` 抽象方法，创建`RestHighLevelClient` 对象。
+
+`AbstractElasticsearchConfiguration` 源码：
+
+```java
+package org.springframework.data.elasticsearch.config;
+
+import org.elasticsearch.client.RestHighLevelClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
+import org.springframework.data.elasticsearch.core.convert.ElasticsearchConverter;
+
+/**
+ * @author Christoph Strobl
+ * @author Peter-Josef Meisch
+ * @since 3.2
+ * @see ElasticsearchConfigurationSupport
+ */
+public abstract class AbstractElasticsearchConfiguration extends ElasticsearchConfigurationSupport {
+
+	//需重写此方法
+	public abstract RestHighLevelClient elasticsearchClient();
+
+	@Bean(name = { "elasticsearchOperations", "elasticsearchTemplate" })
+	public ElasticsearchOperations elasticsearchOperations(ElasticsearchConverter elasticsearchConverter) {
+		return new ElasticsearchRestTemplate(elasticsearchClient(), elasticsearchConverter);
+	}
+}
+```
+
+### 5.2 Spring Data集成测试
+
+#### 5.2.1 索引操作
+
+- 创建索引
+
+  - ```java
+    @SpringBootTest
+    class EsSpringbootApplicationTests {
+    
+        @Autowired
+        ElasticsearchRestTemplate template;
+    
+        @Test
+        void testCreateIndex() {
+            //创建索引，系统初始化会自动创建索引
+            System.out.println("创建索引");
+        }
+    }
+    ```
+
+  - ![image-20220317113228536](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220317113228536.png)
+
+- 删除索引
+
+  - ```java
+    @SpringBootTest
+    class EsSpringbootApplicationTests {
+    
+        @Autowired
+        ElasticsearchRestTemplate template;
+    
+        @Test
+        void testCreateIndex() {
+            //创建索引，系统初始化会自动创建索引
+            System.out.println("创建索引");
+        }
+    
+        @Test
+        void deleteIndex() {
+            // 删除索引
+            boolean index = template.deleteIndex(Product.class);
+            System.out.println("删除索引 = " + index);
+        }
+    }
+    
+    // 删除索引 = true
+    ```
+
+  - ![image-20220317113317125](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220317113317125.png)
+
+#### 5.2.2 文档操作
+
+```java
+@SpringBootTest
+class EsSpringbootApplicationTests {
+
+    @Autowired
+    private ProductDao productDao;
+    /**
+     * 新增
+     */
+    @Test
+    public void save(){
+        Product product = new Product();
+        product.setId(2L);
+        product.setTitle("华为手机");
+        product.setCategory("手机");
+        product.setPrice(2999.0);
+        product.setImages("http://www.atguigu/hw.jpg");
+        productDao.save(product);
+    }
+    //POSTMAN, GET http://localhost:9200/product/_doc/2
+
+    //修改
+    @Test
+    public void update(){
+        Product product = new Product();
+        product.setId(2L);
+        product.setTitle("小米 2 手机");
+        product.setCategory("手机");
+        product.setPrice(9999.0);
+        product.setImages("http://www.atguigu/xm.jpg");
+        productDao.save(product);
+    }
+    //POSTMAN, GET http://localhost:9200/product/_doc/2
+
+
+    //根据 id 查询
+    @Test
+    public void findById(){
+        Product product = productDao.findById(2L).get();
+        System.out.println(product);
+    }
+    /*Product(id=2, title=小米 2 手机, category=手机, price=9999.0, images=http://www.atguigu/xm.jpg)*/
+
+    @Test
+    public void findAll(){
+        Iterable<Product> products = productDao.findAll();
+        for (Product product : products) {
+            System.out.println(product);
+        }
+    }
+/*Product(id=2, title=小米 2 手机, category=手机, price=9999.0, images=http://www.atguigu/xm.jpg)
+*/
+    //删除
+    @Test
+    public void delete(){
+        Product product = new Product();
+        product.setId(2L);
+        productDao.delete(product);
+    }
+    //POSTMAN, GET http://localhost:9200/product/_doc/2
+
+    //批量新增
+    @Test
+    public void saveAll(){
+        List<Product> productList = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            Product product = new Product();
+            product.setId(Long.valueOf(i));
+            product.setTitle("["+i+"]小米手机");
+            product.setCategory("手机");
+            product.setPrice(1999.0 + i);
+            product.setImages("http://www.atguigu/xm.jpg");
+            productList.add(product);
+        }
+        productDao.saveAll(productList);
+    }
+
+    //分页查询
+    @Test
+    public void findByPageable(){
+        //设置排序(排序方式，正序还是倒序，排序的 id)
+        Sort sort = Sort.by(Sort.Direction.DESC,"id");
+        int currentPage=0;//当前页，第一页从 0 开始， 1 表示第二页
+        int pageSize = 5;//每页显示多少条
+        //设置查询分页
+        PageRequest pageRequest = PageRequest.of(currentPage, pageSize,sort);
+        //分页查询
+        Page<Product> productPage = productDao.findAll(pageRequest);
+        for (Product Product : productPage.getContent()) {
+            System.out.println(Product);
+        }
+    }
+/*
+Product(id=9, title=[9]小米手机, category=手机, price=2008.0, images=http://www.atguigu/xm.jpg)
+Product(id=8, title=[8]小米手机, category=手机, price=2007.0, images=http://www.atguigu/xm.jpg)
+Product(id=7, title=[7]小米手机, category=手机, price=2006.0, images=http://www.atguigu/xm.jpg)
+Product(id=6, title=[6]小米手机, category=手机, price=2005.0, images=http://www.atguigu/xm.jpg)
+Product(id=5, title=[5]小米手机, category=手机, price=2004.0, images=http://www.atguigu/xm.jpg)
+*/
+}
+```
+
+#### 5.2.3 文档搜索
+
+```java
+
+@SpringBootTest
+class EsSpringbootApplicationTests {
+
+    @Autowired
+    private ProductDao productDao;
+
+    /**
+     * term 查询
+     * search(termQueryBuilder) 调用搜索方法，参数查询构建器对象
+     */
+    @Test
+    public void termQuery(){
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("title", "小米");
+        Iterable<Product> products = productDao.search(termQueryBuilder);
+        for (Product product : products) {
+            System.out.println(product);
+        }
+    }
+/*
+Product(id=5, title=[5]小米手机, category=手机, price=2004.0, images=http://www.atguigu/xm.jpg)
+Product(id=7, title=[7]小米手机, category=手机, price=2006.0, images=http://www.atguigu/xm.jpg)
+Product(id=0, title=[0]小米手机, category=手机, price=1999.0, images=http://www.atguigu/xm.jpg)
+Product(id=2, title=[2]小米手机, category=手机, price=2001.0, images=http://www.atguigu/xm.jpg)
+Product(id=3, title=[3]小米手机, category=手机, price=2002.0, images=http://www.atguigu/xm.jpg)
+Product(id=4, title=[4]小米手机, category=手机, price=2003.0, images=http://www.atguigu/xm.jpg)
+Product(id=1, title=[1]小米手机, category=手机, price=2000.0, images=http://www.atguigu/xm.jpg)
+Product(id=6, title=[6]小米手机, category=手机, price=2005.0, images=http://www.atguigu/xm.jpg)
+Product(id=8, title=[8]小米手机, category=手机, price=2007.0, images=http://www.atguigu/xm.jpg)
+Product(id=9, title=[9]小米手机, category=手机, price=2008.0, images=http://www.atguigu/xm.jpg)
+*/    
+    
+    /**
+     * term 查询加分页
+     */
+    @Test
+    public void termQueryByPage(){
+        int currentPage= 0 ;
+        int pageSize = 5;
+        //设置查询分页
+        PageRequest pageRequest = PageRequest.of(currentPage, pageSize);
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("title", "小米");
+        Iterable<Product> products =
+                productDao.search(termQueryBuilder,pageRequest);
+        for (Product product : products) {
+            System.out.println(product);
+        }
+    }
+/*
+Product(id=5, title=[5]小米手机, category=手机, price=2004.0, images=http://www.atguigu/xm.jpg)
+Product(id=7, title=[7]小米手机, category=手机, price=2006.0, images=http://www.atguigu/xm.jpg)
+Product(id=0, title=[0]小米手机, category=手机, price=1999.0, images=http://www.atguigu/xm.jpg)
+Product(id=2, title=[2]小米手机, category=手机, price=2001.0, images=http://www.atguigu/xm.jpg)
+Product(id=3, title=[3]小米手机, category=手机, price=2002.0, images=http://www.atguigu/xm.jpg)
+*/
+}
+```
+
+### 5.3 Spark Streaming框架集成
+
+#### 5.3.1 Spark Streaming框架介绍
+
+​		`Spark Streaming` 是 `Spark core API` 的扩展，支持实时数据流的处理，并且具有可扩展，高吞吐量，容错的特点。数据可以从许多来源获取，如 `Kafka`， `Flume`，`Kinesis` 或 `TCP sockets`，并且可以使用复杂的算法进行处理，这些算法使用诸如 `map`，`reduce`，`join` 和 `window` 等高级函数表示。最后，处理后的数据可以推送到文件系统，数据库等。实际上，您可以将 `Spark` 的机器学习和图形处理算法应用于数据流。
+
+#### 5.3.2 Spark Streaming框架集成
+
+1. 创建 Maven 项目
+
+2. 修改 `pom.xml` ，添加依赖
+
+   - ```xml
+     <?xml version="1.0" encoding="utf-8"?>
+     <project
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         <modelVersion>4.0.0</modelVersion>
+         <groupId>com.lun.es</groupId>
+         <artifactId>sparkstreaming-elasticsearch</artifactId>
+         <version>1.0</version>
+         <properties>
+             <maven.compiler.source>8</maven.compiler.source>
+             <maven.compiler.target>8</maven.compiler.target>
+         </properties>
+         <dependencies>
+             <dependency>
+                 <groupId>org.apache.spark</groupId>
+                 <artifactId>spark-core_2.12</artifactId>
+                 <version>3.0.0</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.apache.spark</groupId>
+                 <artifactId>spark-streaming_2.12</artifactId>
+                 <version>3.0.0</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.elasticsearch</groupId>
+                 <artifactId>elasticsearch</artifactId>
+                 <version>7.8.0</version>
+             </dependency>
+             <!-- elasticsearch 的客户端 -->
+             <dependency>
+                 <groupId>org.elasticsearch.client</groupId>
+                 <artifactId>elasticsearch-rest-high-level-client</artifactId>
+                 <version>7.8.0</version>
+             </dependency>
+             <!-- elasticsearch 依赖 2.x 的 log4j -->
+             <dependency>
+                 <groupId>org.apache.logging.log4j</groupId>
+                 <artifactId>log4j-api</artifactId>
+                 <version>2.8.2</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.apache.logging.log4j</groupId>
+                 <artifactId>log4j-core</artifactId>
+                 <version>2.8.2</version>
+             </dependency>
+             <!-- <dependency>-->
+             <!-- <groupId>com.fasterxml.jackson.core</groupId>-->
+             <!-- <artifactId>jackson-databind</artifactId>-->
+             <!-- <version>2.11.1</version>-->
+             <!-- </dependency>-->
+             <!-- &lt;!&ndash; junit 单元测试 &ndash;&gt;-->
+             <!-- <dependency>-->
+             <!-- <groupId>junit</groupId>-->
+             <!-- <artifactId>junit</artifactId>-->
+             <!-- <version>4.12</version>-->
+             <!-- </dependency>-->
+         </dependencies>
+     </project>
+     ```
+
+3. 功能实现
+
+   - ```xml
+     import org.apache.http.HttpHost
+     import org.apache.spark.SparkConf
+     import org.apache.spark.streaming.dstream.ReceiverInputDStream
+     import org.apache.spark.streaming.{Seconds, StreamingContext}
+     import org.elasticsearch.action.index.IndexRequest
+     import org.elasticsearch.client.indices.CreateIndexRequest
+     import org.elasticsearch.client.{RequestOptions, RestClient, RestHighLevelClient}
+     import org.elasticsearch.common.xcontent.XContentType
+     import java.util.Date
+     
+     object SparkStreamingESTest {
+     
+         def main(args: Array[String]): Unit = {
+             val sparkConf = new SparkConf().setMaster("local[*]").setAppName("ESTest")
+             val ssc = new StreamingContext(sparkConf, Seconds(3))
+             val ds: ReceiverInputDStream[String] = ssc.socketTextStream("localhost", 9999)
+             ds.foreachRDD(
+                 rdd => {
+                     println("*************** " + new Date())
+                     rdd.foreach(
+                         data => {
+                             val client = new RestHighLevelClient(RestClient.builder(new HttpHost("localhost", 9200, "http")));
+                             // 新增文档 - 请求对象
+                             val request = new IndexRequest();
+                             
+                             // 设置索引及唯一性标识
+                             val ss = data.split(" ")
+                             println("ss = " + ss.mkString(","))
+                             request.index("sparkstreaming").id(ss(0));
+                             
+                             val productJson =
+                                 s"""
+                                 | { "data":"${ss(1)}" }
+                                 |""".stripMargin;
+                             
+                             // 添加文档数据，数据格式为 JSON 格式
+                             request.source(productJson,XContentType.JSON);
+                             
+                             // 客户端发送请求，获取响应对象
+                             val response = client.index(request,
+                             RequestOptions.DEFAULT);
+                             System.out.println("_index:" + response.getIndex());
+                             System.out.println("_id:" + response.getId());
+                             System.out.println("_result:" + response.getResult());
+                             client.close()
+                         }
+                     )
+                 }
+             )
+             ssc.start()
+             ssc.awaitTermination()
+         }
+     }
+     ```
+
+### 5.4 Flink-集成
+
+#### 5.4.1 Flink框架介绍
+
+​		`Apache Spark` 是一-种基于内存的快速、通用、可扩展的大数据分析计算引擎。 `Apache Spark` 掀开了内存计算的先河，以内存作为赌注，贏得了内存计算的飞速发展。但是在其火热的同时，开发人员发现，在 `Spark`中，计算框架普遍存在的缺点和不足依然没有完全解决，而这些问题随着 `5G` 时代的来临以及决策者对实时数据分析结果的迫切需要而凸显的更加明显：
+
+- 乱序数据，迟到数据
+- 低延迟，高吞吐，准确性
+- 容错性
+- 数据精准一次性处理（Exactly-Once）
+
+`Apache Flink` 是一个框架和分布式处理引擎，用于对无界和有界数据流进行有状态计算。在 `Spark` 火热的同时，也默默地发展自己，并尝试着解决其他计算框架的问题。慢慢地，随着这些问题的解决，`Flink` 慢慢被绝大数程序员所熟知并进行大力推广，阿里公司在 2015 年改进 `Flink` ，并创建了内部分支 `Blink`，目前服务于阿里集团内部搜索、推荐、广告和蚂蚁等大量核心实时业务
+
+#### 5.4.2 Flink框架集成
+
+1. 创建 maven 项目
+
+2. 修改 `pom.xml`，添加依赖
+
+   - ```xml
+     <?xml version="1.0" encoding="UTF-8"?>
+     <project
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+     http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         <modelVersion>4.0.0</modelVersion>
+         <groupId>com.lun.es</groupId>
+         <artifactId>flink-elasticsearch</artifactId>
+         <version>1.0</version>
+         <properties>
+             <maven.compiler.source>8</maven.compiler.source>
+             <maven.compiler.target>8</maven.compiler.target>
+         </properties>
+         <dependencies>
+             <dependency>
+                 <groupId>org.apache.flink</groupId>
+                 <artifactId>flink-scala_2.12</artifactId>
+                 <version>1.12.0</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.apache.flink</groupId>
+                 <artifactId>flink-streaming-scala_2.12</artifactId>
+                 <version>1.12.0</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.apache.flink</groupId>
+                 <artifactId>flink-clients_2.12</artifactId>
+                 <version>1.12.0</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.apache.flink</groupId>
+                 <artifactId>flink-connector-elasticsearch7_2.11</artifactId>
+                 <version>1.12.0</version>
+             </dependency>
+             <!-- jackson -->
+             <dependency>
+                 <groupId>com.fasterxml.jackson.core</groupId>
+                 <artifactId>jackson-core</artifactId>
+                 <version>2.11.1</version>
+             </dependency>
+         </dependencies>
+     </project>
+     ```
+
+3. 功能实现
+
+   - ```java
+     import org.apache.flink.api.common.functions.RuntimeContext;
+     import org.apache.flink.streaming.api.datastream.DataStreamSource;
+     import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+     import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkFunction;
+     import org.apache.flink.streaming.connectors.elasticsearch.RequestIndexer;
+     import org.apache.flink.streaming.connectors.elasticsearch7.ElasticsearchSink;
+     import org.apache.http.HttpHost;
+     import org.elasticsearch.action.index.IndexRequest;
+     import org.elasticsearch.client.Requests;
+     import java.util.ArrayList;
+     import java.util.HashMap;
+     import java.util.List;
+     import java.util.Map;
+     
+     public class FlinkElasticsearchSinkTest {
+     
+     	public static void main(String[] args) throws Exception {
+     
+     		StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+     		DataStreamSource<String> source = env.socketTextStream("localhost", 9999);
+     		List<HttpHost> httpHosts = new ArrayList<>();
+     		httpHosts.add(new HttpHost("127.0.0.1", 9200, "http"));
+     		//httpHosts.add(new HttpHost("10.2.3.1", 9200, "http"));
+     
+     		// use a ElasticsearchSink.Builder to create an ElasticsearchSink
+     		ElasticsearchSink.Builder<String> esSinkBuilder = new ElasticsearchSink.Builder<>(httpHosts, 
+     			new ElasticsearchSinkFunction<String>() {
+     				public IndexRequest createIndexRequest(String element) {
+     					Map<String, String> json = new HashMap<>();
+     					json.put("data", element);
+     					return Requests.indexRequest()
+     						.index("my-index")
+     						//.type("my-type")
+     						.source(json);
+     				}
+     
+     				@Override
+     				public void process(String element, RuntimeContext ctx, RequestIndexer indexer) {
+     					indexer.add(createIndexRequest(element));
+     				}
+     			}
+     		);
+     		
+     		// configuration for the bulk requests; this instructs the sink to emit after every element, otherwise they would be buffered
+     		esSinkBuilder.setBulkFlushMaxActions(1);
+     
+     		// provide a RestClientFactory for custom configuration on the internally createdREST client
+     		// esSinkBuilder.setRestClientFactory(
+     		// restClientBuilder -> {
+     			// restClientBuilder.setDefaultHeaders(...)
+     			// restClientBuilder.setMaxRetryTimeoutMillis(...)
+     			// restClientBuilder.setPathPrefix(...)
+     			// restClientBuilder.setHttpClientConfigCallback(...)
+     		// }
+     		// );
+     		source.addSink(esSinkBuilder.build());
+     		env.execute("flink-es");
+     	}
+     }
+     ```
+
+## 6. Elasticsearch优化
+
+### 6.1 硬件选择
+
+​		`Elasticsearch`  的基础是 `Lucene`，所有的索引和文档数据是存储在本地的磁盘中，具体的路径可在 ES 的配置文件 `…/config/elasticsearch.yml` 中配置，如下：
+
+```yaml
+#
+# Path to directory where to store the data (separate multiple locations by comma):
+#
+path.data: /path/to/data
+#
+# Path to log files:
+#
+path.logs: /path/to/logs
+```
+
+磁盘在现代服务器上通常都是瓶颈。`Elasticsearch`重度使用磁盘，你的磁盘能处理的吞吐量越大，你的节点就越稳定。这里有一些优化磁盘 `I/O` 的技巧：
+
+- 使用SSD就像其他地方提过的，他们比机械磁盘优秀多了。
+- 使用RAID0。条带化RAID会提高磁盘IO，代价显然就是当一块硬盘故障时整个就故障了。不要使用镜像或者奇偶校验RAID，因为副本已经提供了这个功能。
+- 另外，使用多块硬盘，并允许Elasticsearch 通过多个path data目录配置把数据条带化分配到它们上面。
+- 不要使用远程挂载的存储，比如NFS或者SMB/CIFS。这个引入的延迟对性能来说完全是背道而驰的。
+
+### 6.2 分片策略
+
+#### 6.2.1 合理设置分片数量
+
+分片和副本的设计为 ES 提供了支持分布式和故障转移的特性，但并不意味着分片和副本是可以无限分配的。而且索引的分片完成分配后由于索引的路由机制，我们是不能重新修改分片数的。
+
+可能有人会说，我不知道这个索引将来会变得多大，并且过后我也不能更改索引的大小，所以为了保险起见，还是给它设为 1000 个分片吧。但是需要知道的是，一个分片并不是没有代价的。需要了解：
+
+- 一个分片的底层即为一个 `Lucene` 索引，会消耗一定文件句柄、内存、以及 CPU 运转。
+
+- 每一个搜索请求都需要命中索引中的每一个分片，如果每一个分片都处于不同的节点还好， 但如果多个分片都需要在同一个节点上竞争使用相同的资源就有些糟糕了。
+
+- 用于计算相关度的词项统计信息是基于分片的。如果有许多分片，每一个都只有很少的数据会导致很低的相关度。
+
+一个业务索引具体需要分配多少分片可能需要架构师和技术人员对业务的增长有个预先的判断，横向扩展应当分阶段进行。为下一阶段准备好足够的资源。 只有当你进入到下一个阶段，你才有时间思考需要作出哪些改变来达到这个阶段。一般来说，我们遵循一些原则。
+
+- 控制每个分片占用的硬盘容量不超过 ES 的最大 JVM 的堆空间设置（一般设置不超过 32G，参考下文的 JVM 设置原则），因此，如果索引的总容量在 500G 左右，那分片大小在 16 个左右即可；当然，最好同时考虑原则 2。
+- 考虑一下 node 数量，一般一个节点有时候就是一台物理机，如果分片数过多，大大超过了节点数，很可能会导致一个节点上存在多个分片，一旦该节点故障，即使保持了 1 个以上的副本，同样有可能会导致数据丢失，集群无法恢复。所以， 一般都设置分片数不超过节点数的 3 倍。
+- 主分片，副本和节点最大数之间数量，我们分配的时候可以参考以下关系：`节点数<=主分片数*(副本数+1)`。
+  
+
+#### 6.2.2 推迟分片分配
+
+对于节点瞬时中断的问题，默认情况，集群会等待一分钟来查看节点是否会重新加入，如果这个节点在此期间重新加入，重新加入的节点会保持其现有的分片数据，不会触发新的分片分配。这样就可以减少 ES 在自动再平衡可用分片时所带来的极大开销。
+
+通过修改参数 `delayed_timeout` ，可以延长再均衡的时间，可以全局设置也可以在索引级别进行修改：
+
+```json
+#PUT /_all/_settings
+{
+	"settings": {
+		"index.unassigned.node_left.delayed_timeout": "5m"
+	}
+}
+```
+
+### 6.3 路由选择
+
+当我们查询文档的时候， Elasticsearch 如何知道一个文档应该存放到哪个分片中呢？它其实是通过下面公式 `shard = hash(routing) % number_of_primary_shards` 计算得到的。`routing` 默认值是文档的 `id`，也可以采用自定义值，比如用户 `id`。
+
+#### 6.3.1 不带routing查询
+
+在查询的时候因为不知道要查询的数据具体在哪个分片上，所以整个过程分为2个步骤：
+
+- 分发：请求到达协调节点后，协调节点将查询请求分发到每个分片上。
+- 聚合：协调节点搜集到每个分片上查询结果，在将查询的结果进行排序，之后给用户返回结果。
+
+#### 6.3.2 带routing查询
+
+​		查询的时候，可以直接根据 `routing` 信息定位到某个分配查询，不需要查询所有的分配，经过协调节点排序。向上面自定义的用户查询，如果 `routing` 设置为 `userid` 的话，就可以直接查询出数据来，效率提升很多。
+
+### 6.4 写入速度优化
+
+ES 的默认配置，是综合了数据可靠性、写入速度、搜索实时性等因素。实际使用时，我们需要根据公司要求，进行偏向性的优化。
+
+针对于搜索性能要求不高，但是对写入要求较高的场景，我们需要尽可能的选择恰当写优化策略。综合来说，可以考虑以下几个方面来提升写索引的性能：
+
+- 加大 `Translog Flush`，目的是降低 `Iops`、`Writeblock`。
+- 增加 `Index Refesh` 间隔，目的是减少 `Segment Merge` 的次数。
+- 调整 `Bulk` 线程池和队列。
+- 优化节点间的任务分布。
+- 优化 `Lucene` 层的索引建立，目的是降低 `CPU` 及 `IO`。
+
+#### 6.4.1 优化存储设备
+
+ES 是一种密集使用磁盘的应用，在段合并的时候会频繁操作磁盘，所以对磁盘要求较高，当磁盘速度提升之后，集群的整体性能会大幅度提高。
+
+#### 6.4.2 合理使用合并
+
+Lucene 以段的形式存储数据。当有新的数据写入索引时， Lucene 就会自动创建一个新的段。
+
+随着数据量的变化，段的数量会越来越多，消耗的多文件句柄数及 CPU 就越多，查询效率就会下降。
+
+由于 Lucene 段合并的计算量庞大，会消耗大量的 I/O，所以 ES 默认采用较保守的策略，让后台定期进行段合并。
+
+#### 6.4.3 减少 Refresh 的次数
+
+Lucene 在新增数据时，采用了 **延迟写入** 的策略，默认情况下索引的 `refresh_interval ` 为1 秒。
+
+Lucene 将待写入的数据先写到内存中，超过 1 秒（默认）时就会触发一次 Refresh，然后 Refresh 会把内存中的数据刷新到操作系统的文件缓存系统中。
+
+如果我们对搜索的实效性要求不高，可以将 Refresh 周期延长，例如 30 秒。
+
+这样还可以有效地减少段刷新次数，但这同时意味着需要消耗更多的 Heap 内存。
+
+#### 6.4.4 加大 Flush 设置
+
+Flush 的主要目的是把文件缓存系统中的段持久化到硬盘，当 Translog 的数据量达到 512MB 或者 30 分钟时，会触发一次 Flush。
+
+`index.translog.flush_threshold_size` 参数的默认值是 512MB，我们进行修改。
+
+增加参数值意味着文件缓存系统中可能需要存储更多的数据，所以我们需要为操作系统的文件缓存系统留下足够的空间。
+
+#### 6.4.5 减少副本的数量
+
+ES 为了保证集群的可用性，提供了 Replicas（副本）支持，然而每个副本也会执行分析、索引及可能的合并过程，所以 Replicas 的数量会严重影响写索引的效率。
+
+当写索引时，需要把写入的数据都同步到副本节点，副本节点越多，写索引的效率就越慢。
+
+如果我们需要大批量进行写入操作，可以先禁止Replica复制，设置
+`index.number_of_replicas: 0` 关闭副本。在写入完成后， Replica 修改回正常的状态。
+
+### 6.5 内存配置
+
+ES 默认安装后设置的内存是 1GB，对于任何一个现实业务来说，这个设置都太小了。如果是通过解压安装的 ES，则在 ES 安装文件中包含一个 jvm.option 文件，添加如下命令来设置 ES 的堆大小， Xms 表示堆的初始大小， Xmx 表示可分配的最大内存，都是 1GB。
+
+确保 Xmx 和 Xms 的大小是相同的，其目的是为了能够在 Java 垃圾回收机制清理完堆区后不需要重新分隔计算堆区的大小而浪费资源，可以减轻伸缩堆大小带来的压力。
+
+假设你有一个 64G 内存的机器，按照正常思维思考，你可能会认为把 64G 内存都给ES 比较好，但现实是这样吗， 越大越好？虽然内存对 ES 来说是非常重要的，但是答案是否定的！
+
+因为 ES 堆内存的分配需要满足以下两个原则：
+
+- 不要超过物理内存的 50%： Lucene 的设计目的是把底层 OS 里的数据缓存到内存中。Lucene 的段是分别存储到单个文件中的，这些文件都是不会变化的，所以很利于缓存，同时操作系统也会把这些段文件缓存起来，以便更快的访问。如果我们设置的堆内存过大， Lucene 可用的内存将会减少，就会严重影响降低 Lucene 的全文本查询性能。
+
+- 堆内存的大小最好不要超过 32GB：在 Java 中，所有对象都分配在堆上，然后有一个 Klass Pointer 指针指向它的类元数据。这个指针在 64 位的操作系统上为 64 位， 64 位的操作系统可以使用更多的内存（2^64）。在 32 位的系统上为 32 位， 32 位的操作系统的最大寻址空间为 4GB（2^32）。
+  但是 64 位的指针意味着更大的浪费，因为你的指针本身大了。浪费内存不算，更糟糕的是，更大的指针在主内存和缓存器（例如 LLC, L1 等）之间移动数据的时候，会占用更多的带宽。
+
+最终我们都会采用 31 G 设置
+
+- -Xms 31g
+- -Xmx 31g
+
+假设你有个机器有 128 GB 的内存，你可以创建两个节点，每个节点内存分配不超过 32 GB。也就是说不超过 64 GB 内存给 ES 的堆内存，剩下的超过 64 GB 的内存给 Lucene。
+
+### 6.6 重要配置
+
+![image-20220317132605403](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220317132605403.png)
