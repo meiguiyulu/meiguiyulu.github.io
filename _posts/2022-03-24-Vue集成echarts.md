@@ -1,4 +1,4 @@
-# Springboot集成echarts
+# Vue集成echarts
 
 ## 1. 安装ecahrts依赖
 
