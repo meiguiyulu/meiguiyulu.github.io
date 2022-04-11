@@ -371,7 +371,7 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
 - `mvcMatchers("/xxx").permitAll()` 代表放行资源。该资源为公共资源，无需认证和授权即可访问。
 - `anyRequest().authenticated()` 代表所有资源必须认证之后才能访问。
-- `formLogin()` 代表开启表达认证
+- `formLogin()` 代表开启表单认证
 
 **注意：放行的资源必须放在所有认证请求之前。**
 
@@ -1008,9 +1008,423 @@ ProviderManager 本身也可以有多个，多个ProviderManager 共用同一个
 
 #### 4.8.4 定义内存数据源
 
+- 创建数据库表
 
+  ```mysql
+  -- 用户表
+  CREATE TABLE `user`
+  (
+      `id`                    int(11) NOT NULL AUTO_INCREMENT,
+      `username`              varchar(32)  DEFAULT NULL,
+      `password`              varchar(255) DEFAULT NULL,
+      `enabled`               tinyint(1) DEFAULT NULL,
+      `accountNonExpired`     tinyint(1) DEFAULT NULL,
+      `accountNonLocked`      tinyint(1) DEFAULT NULL,
+      `credentialsNonExpired` tinyint(1) DEFAULT NULL,
+      PRIMARY KEY (`id`)
+  ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8;
+  -- 角色表
+  CREATE TABLE `role`
+  (
+      `id`      int(11) NOT NULL AUTO_INCREMENT,
+      `name`    varchar(32) DEFAULT NULL,
+      `name_zh` varchar(32) DEFAULT NULL,
+      PRIMARY KEY (`id`)
+  ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8;
+  -- 用户角色关系表
+  CREATE TABLE `user_role`
+  (
+      `id`  int(11) NOT NULL AUTO_INCREMENT,
+      `uid` int(11) DEFAULT NULL,
+      `rid` int(11) DEFAULT NULL,
+      PRIMARY KEY (`id`),
+      KEY   `uid` (`uid`),
+      KEY   `rid` (`rid`)
+  ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8;
+  ```
+
+- 插入测试数据
+
+  ```mysql
+  -- 插入用户数据
+  BEGIN;
+    INSERT INTO `user`
+    VALUES (1, 'root', '{noop}123', 1, 1, 1, 1);
+    INSERT INTO `user`
+    VALUES (2, 'admin', '{noop}123', 1, 1, 1, 1);
+    INSERT INTO `user`
+    VALUES (3, 'song', '{noop}123', 1, 1, 1, 1);
+  COMMIT;
+  -- 插入角色数据
+  BEGIN;
+    INSERT INTO `role`
+    VALUES (1, 'ROLE_product', '商品管理员');
+    INSERT INTO `role`
+    VALUES (2, 'ROLE_admin', '系统管理员');
+    INSERT INTO `role`
+    VALUES (3, 'ROLE_user', '用户管理员');
+  COMMIT;
+  -- 插入用户角色数据
+  BEGIN;
+    INSERT INTO `user_role`
+    VALUES (1, 1, 1);
+    INSERT INTO `user_role`
+    VALUES (2, 1, 2);
+    INSERT INTO `user_role`
+    VALUES (3, 2, 4);
+    INSERT INTO `user_role`
+    VALUES (4, 3, 3);
+  COMMIT;
+  ```
+
+- 导入依赖
+
+  - ```xml
+            <!--druid-->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>druid</artifactId>
+                <version>1.2.6</version>
+            </dependency>
+            <!--mysql-->
+            <dependency>
+                <groupId>mysql</groupId>
+                <artifactId>mysql-connector-java</artifactId>
+            </dependency>
+            <!--mybatis-->
+            <dependency>
+                <groupId>org.mybatis.spring.boot</groupId>
+                <artifactId>mybatis-spring-boot-starter</artifactId>
+                <version>2.2.0</version>
+            </dependency>
+    ```
+
+- 添加配置
+
+  - ```properties
+    spring.thymeleaf.cache=false
+    
+    spring.datasource.type=com.alibaba.druid.pool.DruidDataSource
+    spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+    spring.datasource.username=root
+    spring.datasource.password=7012+2
+    spring.datasource.url=jdbc:mysql://localhost:3306/springsecurity?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    
+    #mybatis配置
+    mybatis.mapper-location=classpath:com/lyj/mapper/*.xml
+    mybatis.type-aliases-package=com.lyj.demo02.entity
+    
+    # 日志
+    logging.level.com.lyj.demo02=debug
+    ```
 
 #### 4.8.5 数据库数据源
+
+- 自定义 `UserDetailsService`
+
+  - ```java
+    @Component
+    public class MyUserDetailService implements UserDetailsService {
+    
+        @Autowired
+        private UserDao userDao;
+    
+        @Override
+        public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+            // 1.查询用户
+            User user = userDao.loadUserByUsername(username);
+            if (user == null) {
+                throw new UsernameNotFoundException("用户名不正确");
+            }
+            // 2. 权限查询
+            List<Role> roles = userDao.getRolesByUid(user.getId());
+            user.setRoles(roles);
+            return user;
+        }
+    }
+    
+    @Data
+    public class User implements UserDetails {
+        private Integer id;
+        private String username;
+        private String password;
+        private Boolean enabled; // 账户是否激活
+        private Boolean accountNonExpired; // 账户是否过期
+        private Boolean accountNonLocked; // 账户是否锁定
+        private Boolean credentialsNonExpired; // 密码是否过期
+        private List<Role> roles = new ArrayList<>(); // 存储当前用户的角色信息
+    
+        // 返回权限信息
+        @Override
+        public Collection<? extends GrantedAuthority> getAuthorities() {
+            Set<SimpleGrantedAuthority> authorities = new HashSet<>();
+            roles.forEach(role -> {
+                SimpleGrantedAuthority simpleGrantedAuthority = new SimpleGrantedAuthority(role.getName());
+                authorities.add(simpleGrantedAuthority);
+            });
+            return authorities;
+        }
+    
+        @Override
+        public boolean isAccountNonExpired() {
+            return accountNonExpired;
+        }
+    
+        @Override
+        public boolean isAccountNonLocked() {
+            return accountNonLocked;
+        }
+    
+        @Override
+        public boolean isCredentialsNonExpired() {
+            return credentialsNonExpired;
+        }
+    
+        @Override
+        public boolean isEnabled() {
+            return enabled;
+        }
+    }
+    ```
+
+- `Spring Security`配置类中注入 自定义的`UserDetailsService`
+
+  - ```java
+    @Configuration
+    public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+    
+        @Autowired
+        MyUserDetailService myUserDetailService;
+    
+        @Override
+        public void configure(AuthenticationManagerBuilder builder) throws Exception {
+            System.out.println("自定义AuthenticationManager: " + builder);
+            builder.userDetailsService(myUserDetailService);
+        }
+    }
+    ```
+
+
+
+### ==4.9 传统web开发认真认证案例==
+
+**准备实现功能：一个登录页面用于登录以及显示登陆失败的信息，一个主页显示登陆成功以后的用户信息。**
+
+- 开发页面：
+
+  - ```html
+    <!DOCTYPE html>
+    <html lang="en" xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <meta charset="UTF-8">
+        <title>登录</title>
+    </head>
+    <body>
+    
+    <h1>用户登录</h1>
+    <form method="post" th:action="@{/doLogin}">
+        用户名: <input name="uname" type="text"> <br>
+        密码: <input name="pwd" type="password"> <br>
+        <button>登录</button>
+    </form>
+    <hr>
+    <div th:text="${session.SPRING_SECURITY_LAST_EXCEPTION}"></div>
+    </body>
+    </html>
+    ```
+
+  - ```html
+    <!DOCTYPE html>
+    <html lang="en" xmlns:th="http://www.thymeleaf.org"
+          xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+    <head>
+        <meta charset="UTF-8">
+        <title>系统主页</title>
+    </head>
+    <body>
+    <h1>
+        欢迎
+        <span sec:authentication="principal.username"></span>
+        进入我的系统
+    </h1>
+    <h3>用户的详细信息:</h3>
+    <ul>
+        <li sec:authentication="principal.username"></li>
+        <li sec:authentication="principal.authorities"></li>
+        <li sec:authentication="principal.accountNonExpired"></li>
+        <li sec:authentication="principal.accountNonLocked"></li>
+        <li sec:authentication="principal.credentialsNonExpired"></li>
+    </ul>
+    <hr>
+    <a th:href="@{/logout}">退出登录</a>
+    </body>
+    </html>
+    ```
+
+- 自定义`userDetailService`
+
+  - ```java
+    @Component
+    public class MyUserDetailService implements UserDetailsService {
+    
+        @Autowired
+        private UserDao userDao;
+    
+        @Override
+        public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+            // 1.查询用户
+            User user = userDao.loadUserByUsername(username);
+            if (user == null) {
+                throw new UsernameNotFoundException("用户名不正确");
+            }
+            // 2. 权限查询
+            List<Role> roles = userDao.getRolesByUid(user.getId());
+            user.setRoles(roles);
+            return user;
+        }
+    }
+    ```
+
+- `Spring Security`配置类
+
+  - ```java
+    /**
+     * 自定义 spring security相关配置
+     */
+    @Configuration
+    public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    
+        @Autowired
+        private MyUserDetailService myUserDetailService;
+    
+        @Override
+        protected void configure(AuthenticationManagerBuilder builder) throws Exception {
+            builder.userDetailsService(myUserDetailService);
+        }
+    
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.authorizeRequests()
+                    .mvcMatchers("/login.html").permitAll()
+                    .anyRequest().authenticated()
+                    .and()
+                    .formLogin()
+                    .loginPage("/login.html")
+                    .loginProcessingUrl("/doLogin")
+                    .passwordParameter("pwd")
+                    .usernameParameter("uname")
+                    .defaultSuccessUrl("/index.html", true)
+                    .failureForwardUrl("/login.html") // 登录失败重定向到登陆页面
+                    .and()
+                    .logout()
+                    .logoutUrl("/logout")
+                    .logoutSuccessUrl("/login.html")
+                    .and()
+                    .csrf().disable();
+    
+        }
+    }
+    ```
+
+### ==4.10 前后端分离开发认证总结案例==
+
+- 自定义 `UsernamePasswordAuthenticationFilter` 用于读取 `JSON` 数据完成登录功能
+
+  ```java
+  /**
+   * 自定义前后端分离 Filter
+   */
+  
+  public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+      @Override
+      public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+          /**
+           * 1. 判断是否是 post 请求
+           * 2. 判断是否是 json 格式请求类型
+           * 3. 从json数据中获取用户输入的用户名和密码进行验证
+           */
+          // 判断是否是 post 请求
+          if (!request.getMethod().equals("post")) {
+              throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+          }
+  
+          // 2. 判断是否是 json 格式请求类型
+          if (request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_VALUE)) {
+              // 3. 从json数据中获取用户输入的用户名和密码进行验证 {"":xxx, "":xxx}
+              try {
+                  Map<String, String> userInfo = new ObjectMapper().readValue(request.getInputStream(), Map.class);
+                  String username = userInfo.get(getUsernameParameter());
+                  String password = userInfo.get(getPasswordParameter());
+                  System.out.println("用户名: " + username + " 密码: " + password);
+                  UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(username, password);
+                  setDetails(request, authenticationToken);
+                  return this.getAuthenticationManager().authenticate(authenticationToken);
+              } catch (IOException e) {
+                  e.printStackTrace();
+              }
+          }
+          return super.attemptAuthentication(request, response);
+      }
+  }
+  ```
+
+- `Spring Security` 配置类
+
+  ```java
+  @Configuration
+  public class SecurityConfig extends WebSecurityConfigurerAdapter {
+  
+      @Autowired
+      private MyUserDetailService myUserDetailService;
+  
+      @Override
+      protected void configure(AuthenticationManagerBuilder builder) throws Exception {
+          builder.userDetailsService(myUserDetailService);
+      }
+  
+      @Override
+      public AuthenticationManager authenticationManagerBean() throws Exception {
+          return super.authenticationManagerBean();
+      }
+  
+      // 自定义 Filter 交给工厂
+      @Bean
+      public LoginFilter loginFilter() throws Exception {
+          LoginFilter loginFilter = new LoginFilter();
+          loginFilter.setFilterProcessesUrl("/doLogin");
+          loginFilter.setUsernameParameter("uname");  // 指定请求 json 的用户名 key
+          loginFilter.setPasswordParameter("pwd");    // 指定请求 json 的密码  key
+          loginFilter.setAuthenticationManager(authenticationManagerBean());
+          loginFilter.setAuthenticationSuccessHandler(new LoginSuccessHandler());
+          loginFilter.setAuthenticationFailureHandler(new LoginFailureHandler());
+          return loginFilter;
+      }
+  
+      @Override
+      protected void configure(HttpSecurity http) throws Exception {
+          http.authorizeRequests()
+                  .anyRequest().authenticated()
+                  .and()
+                  .formLogin() // 前后端分离系统需要重写formLogin的登陆实现 自定义UsernamePasswordAuthenticationFilter
+                  .and()
+                  .logout()
+                  .logoutUrl("/logout")
+                  .logoutSuccessHandler(new MyLogoutSuccessHandler())
+                  .and()
+                  .csrf().disable();
+  
+  /**
+  *         http.addFilterAt();       将自定义的 filter 替换过滤器链中的某个 filter
+  *         http.addFilterBefore();   将自定义的 filter 替换过滤器链中某个 filter 之前
+  *         http.addFilterAfter();    将自定义的 filter 替换过滤器链中某个 filter 之后
+  */
+          http.addFilterAt(loginFilter(), UsernamePasswordAuthenticationFilter.class);
+  
+      }
+  }
+  ```
+
+### 4.10 验证码功能
 
 
 
