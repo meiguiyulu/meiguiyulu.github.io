@@ -1424,15 +1424,704 @@ ProviderManager 本身也可以有多个，多个ProviderManager 共用同一个
   }
   ```
 
-### 4.10 验证码功能
+### ==4.10 验证码功能==
 
+#### 生成验证码
 
+- 导入依赖
+
+  - ```java
+            <!--图像验证码-->
+            <!-- https://mvnrepository.com/artifact/com.github.axet/kaptcha -->
+            <dependency>
+                <groupId>com.github.axet</groupId>
+                <artifactId>kaptcha</artifactId>
+                <version>0.
+    ```
+
+- 添加配置类
+
+  - ```java
+    /**
+     * 图形验证码配置类
+     */
+    @Configuration
+    public class KaptchaConfig {
+    
+        @Bean
+        public DefaultKaptcha producer() {
+            Properties propertis = new Properties();
+            propertis.put("kaptcha.border", "no");
+            propertis.put("kaptcha.image.height", "38");
+            propertis.put("kaptcha.image.width", "150");
+            propertis.put("kaptcha.textproducer.font.color", "black");
+            propertis.put("kaptcha.textproducer.font.size", "32");
+            Config config = new Config(propertis);
+            DefaultKaptcha defaultKaptcha = new DefaultKaptcha();
+            defaultKaptcha.setConfig(config);
+    
+            return defaultKaptcha;
+        }
+    }
+    ```
+
+- 编写 Controller 生成验证码图片
+
+  - ```java
+    @Controller
+    public class VerifyController {
+    
+        @Autowired
+        private Producer producer;
+    
+        @RequestMapping("/vc.jpg")
+        public void verifyCode(HttpServletResponse response, HttpSession session) throws IOException {
+            // 1. 生成验证码
+            String text = producer.createText();
+            // 2. 保存到session中
+            session.setAttribute("kaptcha", text);
+            // 3. 生成图片
+            BufferedImage image = producer.createImage(text);
+            // 4. 响应图片
+            response.setHeader("Cache-Control",
+                    "no-store, no-cache");
+            response.setContentType("image/ipeg");
+            ServletOutputStream outputStream = response.getOutputStream();
+            ImageIO.write(image, "jpg", outputStream);
+    
+        }
+    
+    }
+    ```
+
+#### 传统web开发
+
+在[生成验证码](####生成验证码)基础上在前端页面上显示
+
+```html
+验证码: <input type="text" name="kaptcha"> <img th:src="@{/vc.jpg}"alt="">
+```
+
+- 自定义过滤器实现登录功能
+
+  - ```java
+    /**
+     * 自定义验证码的Filter
+     */
+    public class KaptchaFilter extends UsernamePasswordAuthenticationFilter {
+    
+        @Override
+        public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+            // 判断是否是 post 请求
+            if (!request.getMethod().equals("post")) {
+                throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+            }
+            // 1. 从请求中获取验证码
+            String codeFormRequest = request.getParameter("kaptcha"); // 与 html中的name匹配
+            // 2. 从session中获取验证码
+            String codeFromSession = (String) request.getSession().getAttribute("kaptcha");
+    
+            if (codeFromSession != null && codeFromSession.equals(codeFormRequest)) {
+                return super.attemptAuthentication(request, response);
+            }
+            try {
+                throw new KaptchaNotMatchException("验证码不匹配");
+            } catch (KaptchaNotMatchException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+    
+        /**
+         * 解决 spring security Invocation of init method failed; nested exception is java.lang.IllegalArgumentException: authenticationManager must be specified 问题
+         * @param authenticationManager
+         */
+        @Autowired
+        @Override
+        public void setAuthenticationManager(AuthenticationManager authenticationManager) {
+            super.setAuthenticationManager(authenticationManager);
+        }
+    }
+    ```
+
+- 配置类
+
+  - ```java
+    @Configuration
+    public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    
+        @Bean
+        public UserDetailsService userDetailsService() {
+            InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+            manager.createUser(User.withUsername("root").password("{noop}123").roles("admin").build());
+            return manager;
+        }
+    
+        @Bean
+        @Override
+        public AuthenticationManager authenticationManagerBean() throws Exception {
+            return super.authenticationManagerBean();
+        }
+    
+        @Override
+        protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+            auth.userDetailsService(userDetailsService());
+        }
+    
+    /*    @Autowired
+        private KaptchaFilter kaptchaFilter;*/
+    
+        @Bean
+        public KaptchaFilter kaptchaFilter() throws Exception {
+            KaptchaFilter kaptchaFilter = new KaptchaFilter();
+            kaptchaFilter.setFilterProcessesUrl("/doLogin");
+            kaptchaFilter.setUsernameParameter("uname");
+            kaptchaFilter.setPasswordParameter("pwd");
+            // 指定认证管理器
+            kaptchaFilter.setAuthenticationManager(authenticationManagerBean());
+            // 指定认证成功处理
+            kaptchaFilter.setAuthenticationSuccessHandler(((request, response, authentication) -> {
+                response.sendRedirect("/index.html");
+            }));
+            // 指定认证失败处理
+            kaptchaFilter.setAuthenticationFailureHandler(((request, response, exception) -> {
+                response.sendRedirect("/login.html");
+            }));
+            return new KaptchaFilter();
+        }
+    
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.authorizeRequests()
+                    .mvcMatchers("/login.html").permitAll()
+                    .mvcMatchers("/vc.jpg").permitAll()
+                    .anyRequest().authenticated()
+                    .and()
+                    .formLogin()
+                    .loginPage("/login.html")
+    //                .loginProcessingUrl("/doLogin")
+    //                .usernameParameter("uname")
+    //                .passwordParameter("pwd")
+    //                .defaultSuccessUrl("/index.html", true)
+    //                .failureForwardUrl("/login.html")
+                    .and()
+                    .logout()
+                    .logoutUrl("/logout")
+                    .and()
+                    .csrf().disable();
+    
+            http.addFilterAt(kaptchaFilter(), UsernamePasswordAuthenticationFilter.class);
+        }
+    }
+    
+    ```
+
+#### 前后端分离开发
+
+**与传统 `web` 开发的不同之处：**
+
+1. 验证码生成以后需要以 **`BASE64`** 的方式传递给前端
+2. 自定义登录过滤器出了需要考虑验证码以外，还需要考虑 `JSON` 的数据格式
+
+- 验证码的生成
+
+  ```java
+  @RestController
+  public class VerifyController {
+  
+      @Autowired
+      private Producer producer;
+  
+      @RequestMapping("/vc.jpg")
+      public String verifyCode(HttpSession session) throws IOException {
+          // 1. 生成验证码
+          String text = producer.createText();
+          // 2. 保存到session中
+          session.setAttribute("kaptcha", text);
+          // 3. 生成图片
+          BufferedImage image = producer.createImage(text);
+          FastByteArrayOutputStream fos = new FastByteArrayOutputStream();
+          ImageIO.write(image, "jpg", fos);
+  
+          // 4. 返回Base64
+          return Base64.encodeBase64String(fos.toByteArray());
+      }
+  
+  }
+  ```
+
+- 自定义过滤器
+
+  ```java
+  package com.lyj.security.filter;
+  
+  import com.fasterxml.jackson.databind.ObjectMapper;
+  import com.lyj.security.exception.KaptchaNotMatchException;
+  import org.springframework.security.authentication.AuthenticationServiceException;
+  import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+  import org.springframework.security.core.Authentication;
+  import org.springframework.security.core.AuthenticationException;
+  import org.springframework.security.core.userdetails.UsernameNotFoundException;
+  import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+  import org.springframework.util.ObjectUtils;
+  
+  import javax.servlet.http.HttpServletRequest;
+  import javax.servlet.http.HttpServletResponse;
+  import java.io.IOException;
+  import java.util.Map;
+  
+  /**
+   * 自定义登录的Filter
+   */
+  public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+  
+      public static final String FORM_KAPTCHA_KEY = "kaptcha";
+  
+      private String kaptchaParameter = FORM_KAPTCHA_KEY;
+  
+      public String getKaptchaParameter() {
+          return kaptchaParameter;
+      }
+  
+      public void setKaptchaParameter(String kaptchaParameter) {
+          this.kaptchaParameter = kaptchaParameter;
+      }
+  
+      @Override
+      public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+          if (!request.getMethod().equals("post")) {
+              throw new AuthenticationServiceException("Authentication method is not supported: " + request.getMethod());
+          }
+          // 1. 获取请求验证码
+          try {
+              Map<String, String> userInfo = new ObjectMapper().readValue(request.getInputStream(), Map.class);
+              String codeFromRequest = userInfo.get(getKaptchaParameter());  // 请求中的验证码
+              String username = userInfo.get(getUsernameParameter());  // 请求中的用户名
+              String password = userInfo.get(getPasswordParameter()); // 请求中的密码
+  
+              // 2. 获取session或者redis中的验证码
+              String codeFromSession = (String) request.getSession().getAttribute("kaptcha");
+              if (!ObjectUtils.isEmpty(codeFromSession) && !ObjectUtils.isEmpty(codeFromRequest)
+                      && codeFromSession.equalsIgnoreCase(codeFromRequest)) {
+                  // 3. 获取用户名和密码认证
+                  UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(username, password);
+                  setDetails(request, token);
+                  return this.getAuthenticationManager().authenticate(token);
+              }
+          } catch (IOException e) {
+              e.printStackTrace();
+          }
+  		throw new KaptchaNotMatchException("验证码不正确");
+      }
+  }
+  
+  /**
+   * 自定义验证码异常
+   */
+  public class KaptchaNotMatchException extends AuthenticationException {
+  
+      public KaptchaNotMatchException(String msg) {
+          super(msg);
+      }
+  
+      public KaptchaNotMatchException(String msg, Throwable cause) {
+          super(msg, cause);
+      }
+  }
+  
+  ```
+
+- 配置类
+
+  - ```java
+    @Configuration
+    public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    
+        // 自定义数据源
+        @Bean
+        public UserDetailsService userDetailsService() {
+            InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+            manager.createUser(User.withUsername("root").password("{noop}123").roles("admin").build());
+            return manager;
+        }
+    
+    
+        @Override
+        protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+            auth.userDetailsService(userDetailsService());
+        }
+    
+        @Override
+        @Bean
+        public AuthenticationManager authenticationManagerBean() throws Exception {
+            return super.authenticationManagerBean();
+        }
+    
+        // 配置自定义过滤器
+        @Bean
+        public LoginFilter loginFilter() throws Exception {
+            LoginFilter loginFilter = new LoginFilter();
+            // 1. 认证url
+            loginFilter.setFilterProcessesUrl("/doLogin");
+            // 2. 认证的接收参数
+            loginFilter.setUsernameParameter("uname");
+            loginFilter.setPasswordParameter("passwd");
+            loginFilter.setKaptchaParameter("kaptcha");
+            // 3. 指定认证管理器
+            loginFilter.setAuthenticationManager(authenticationManagerBean());
+            // 4. 指定成功时的响应
+            loginFilter.setAuthenticationSuccessHandler(((request, response, authentication) -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("msg", "登陆成功");
+                map.put("authentication", authentication);
+                response.setStatus(HttpStatus.OK.value());
+                response.setContentType("application/json;charset=UTF-8");
+                String string = new ObjectMapper().writeValueAsString(map);
+                response.getWriter().println(string);
+            }));
+            // 5. 指定失败时的响应
+            loginFilter.setAuthenticationFailureHandler(((request, response, exception) -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("msg", "登录失败");
+                response.setContentType("application/json;charset=UTF-8");
+                response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+                String string = new ObjectMapper().writeValueAsString(map);
+                response.getWriter().println(string);
+            }));
+    
+            return loginFilter;
+        }
+    
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.authorizeRequests()
+                    .mvcMatchers("/vc.jpg").permitAll()
+                    .anyRequest().authenticated()
+                    .and()
+                    .formLogin()
+                    .and()
+                    .exceptionHandling()
+                    .authenticationEntryPoint(((request, response, authException) -> {
+                        response.setContentType("application/json;charset=UTF-8");
+                        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                        response.getWriter().println("必须认证以后才能访问");
+                    }))
+                    .and()
+                    .logout()
+                    .and()
+                    .csrf().disable();
+    
+            http.addFilterAt(loginFilter(), UsernamePasswordAuthenticationFilter.class);
+        }
+    }
+    ```
 
 ## 5. 密码加密
 
+### 5.1 PasswordEncoder
 
+通过分录认证流程源码得知，实际的密码比较是通过 `PasswordEncoder` 完成的，因此只需要使用自定义实现`PasswordEncoder` 便可以实现不同方式的加密。
+
+```java
+/**
+ * Service interface for encoding passwords.
+ *
+ * The preferred implementation is {@code BCryptPasswordEncoder}.
+ *
+ * @author Keith Donald
+ */
+public interface PasswordEncoder {
+
+	/**
+	 * Encode the raw password. Generally, a good encoding algorithm applies a SHA-1 or
+	 * greater hash combined with an 8-byte or greater randomly generated salt.
+	 */
+	String encode(CharSequence rawPassword);
+
+	/**
+	 * Verify the encoded password obtained from storage matches the submitted raw
+	 * password after it too is encoded. Returns true if the passwords match, false if
+	 * they do not. The stored password itself is never decoded.
+	 * @param rawPassword the raw password to encode and match
+	 * @param encodedPassword the encoded password from storage to compare with
+	 * @return true if the raw password, after encoding, matches the encoded password from
+	 * storage
+	 */
+	boolean matches(CharSequence rawPassword, String encodedPassword);
+
+	/**
+	 * Returns true if the encoded password should be encoded again for better security,
+	 * else false. The default implementation always returns false.
+	 * @param encodedPassword the encoded password to check
+	 * @return true if the encoded password should be encoded again for better security,
+	 * else false.
+	 */
+	default boolean upgradeEncoding(String encodedPassword) {
+		return false;
+	}
+}
+```
+
+- `encode` 进行明文密码加密
+- `matches` 对加密后的密码进行比较
+- `upgradeEncoding` 给密码进行升级
+
+默认提供的加密算法如下：
+
+![image-20220412123907658](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220412123907658.png)
+
+### 5.2 DelegatingPasswordEncoder
+
+​		在 `Spring Security 5.0` 以后，默认的密码加密方案是 `DelegatingPasswordEncoder`。从名字上看，`DelegatingPasswordEncoder` 是**一个代理类，而非一种全新的密码加密方法**。`DelegatingPasswordEncoder`主要用来代理上图中不同的密码加密方案。采用 `DelegatingPasswordEncoder`而不采用某一种默认的具体加密方式的原因在于：
+
+1. 兼容性：使用 `DelegatingPasswordEncoder` 可以帮助很多需要使用旧密码加密方式的系统顺利迁移到 `Spring Security` 中，它允许在同一个系统中同时存在很多种不同的密码加密方案。
+2. 便捷性：密码存储的最佳方案不可能一直不变，如果使用 `DelegatingPasswordEncoder` 作为默认的密码加密方案，当需要修改加密方案的时候，只需要修改很小的一部分代码就可以实现。
+
+#### 源码
+
+```java
+public class DelegatingPasswordEncoder implements PasswordEncoder {
+
+	private static final String PREFIX = "{";
+
+	private static final String SUFFIX = "}";
+
+	private final String idForEncode;
+
+	private final PasswordEncoder passwordEncoderForEncode;
+
+	private final Map<String, PasswordEncoder> idToPasswordEncoder;
+
+	private PasswordEncoder defaultPasswordEncoderForMatches = new UnmappedIdPasswordEncoder();
+
+	/**
+	 * Creates a new instance
+	 * @param idForEncode the id used to lookup which {@link PasswordEncoder} should be
+	 * used for {@link #encode(CharSequence)}
+	 * @param idToPasswordEncoder a Map of id to {@link PasswordEncoder} used to determine
+	 * which {@link PasswordEncoder} should be used for
+	 * {@link #matches(CharSequence, String)}
+	 */
+	public DelegatingPasswordEncoder(String idForEncode, Map<String, PasswordEncoder> idToPasswordEncoder) {
+        // ......
+	}
+
+	/**
+	 * Sets the {@link PasswordEncoder} to delegate to for
+	 * {@link #matches(CharSequence, String)} if the id is not mapped to a
+	 * {@link PasswordEncoder}.
+	 *
+	 * <p>
+	 * The encodedPassword provided will be the full password passed in including the
+	 * {"id"} portion.* For example, if the password of "{notmapped}foobar" was used, the
+	 * "id" would be "notmapped" and the encodedPassword passed into the
+	 * {@link PasswordEncoder} would be "{notmapped}foobar".
+	 * </p>
+	 * @param defaultPasswordEncoderForMatches the encoder to use. The default is to throw
+	 * an {@link IllegalArgumentException}
+	 */
+	public void setDefaultPasswordEncoderForMatches(PasswordEncoder defaultPasswordEncoderForMatches) {
+        // ......
+	}
+
+	@Override
+	public String encode(CharSequence rawPassword) {
+		return PREFIX + this.idForEncode + SUFFIX + this.passwordEncoderForEncode.encode(rawPassword);
+	}
+
+	@Override
+	public boolean matches(CharSequence rawPassword, String prefixEncodedPassword) {
+		if (rawPassword == null && prefixEncodedPassword == null) {
+			return true;
+		}
+		String id = extractId(prefixEncodedPassword);
+		PasswordEncoder delegate = this.idToPasswordEncoder.get(id);
+		if (delegate == null) {
+			return this.defaultPasswordEncoderForMatches.matches(rawPassword, prefixEncodedPassword);
+		}
+		String encodedPassword = extractEncodedPassword(prefixEncodedPassword);
+		return delegate.matches(rawPassword, encodedPassword);
+	}
+
+	private String extractId(String prefixEncodedPassword) {
+		if (prefixEncodedPassword == null) {
+			return null;
+		}
+		int start = prefixEncodedPassword.indexOf(PREFIX);
+		if (start != 0) {
+			return null;
+		}
+		int end = prefixEncodedPassword.indexOf(SUFFIX, start);
+		if (end < 0) {
+			return null;
+		}
+		return prefixEncodedPassword.substring(start + 1, end);
+	}
+
+	@Override
+	public boolean upgradeEncoding(String prefixEncodedPassword) {
+		String id = extractId(prefixEncodedPassword);
+		if (!this.idForEncode.equalsIgnoreCase(id)) {
+			return true;
+		}
+		else {
+			String encodedPassword = extractEncodedPassword(prefixEncodedPassword);
+			return this.idToPasswordEncoder.get(id).upgradeEncoding(encodedPassword);
+		}
+	}
+
+	private String extractEncodedPassword(String prefixEncodedPassword) {
+		int start = prefixEncodedPassword.indexOf(SUFFIX);
+		return prefixEncodedPassword.substring(start + 1);
+	}
+
+	/**
+	 * Default {@link PasswordEncoder} that throws an exception telling that a suitable
+	 * {@link PasswordEncoder} for the id could not be found.
+	 */
+	private class UnmappedIdPasswordEncoder implements PasswordEncoder {
+
+		@Override
+		public String encode(CharSequence rawPassword) {
+			throw new UnsupportedOperationException("encode is not supported");
+		}
+
+		@Override
+		public boolean matches(CharSequence rawPassword, String prefixEncodedPassword) {
+			String id = extractId(prefixEncodedPassword);
+			throw new IllegalArgumentException("There is no PasswordEncoder mapped for the id \"" + id + "\"");
+		}
+	}
+}
+```
+
+### 5.3 自定义加密方式
+
+- 方式一：
+
+  - 修改 `{noop}`  **推荐方式**
+
+  - ```java
+        @Bean
+        public UserDetailsService userDetailsService() {
+            InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+            manager.createUser(User.withUsername("root").password("{bcrypt}$2a$10$6rzHZTVscOg6XMIE/e9.eOsGhBPCjMVCCj.bF.GJa8hos32iRrjga").roles("admin").build());
+            return manager;
+        }
+    ```
+
+- 方式二:
+
+  - 指定加密算法
+
+  - ```java
+     @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+    
+    @Bean
+        public UserDetailsService userDetailsService() {
+            InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+        manager.createUser(User.withUsername("root").password("$2a$10$6rzHZTVscOg6XMIE/e9.eOsGhBPCjMVCCj.bF.GJa8hos32iRrjga").roles("admin").build());
+            return manager;
+        }
+    ```
+
+### 5.4 密码自动升级实战
+
+​		推荐使用 `DelegatingPasswordEncoder` 的另外一个好处就是自动进行密码加密方案的升级，这个功能在整合一些老系统的时候非常有用。
+
+​		只需要自定义 ` UserDetailsPasswordService`接口下面的 `updatePassword`方法即可。这样当用户登陆成功以后，便会将数据库中的密码修改为  `DelegatingPasswordEncoder` 的默认实现方式。
+
+```java
+@Component
+public class MyUserDetailService implements UserDetailsService, UserDetailsPasswordService {
+
+    @Autowired
+    private UserDao userDao;
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        // 1.查询用户
+        User user = userDao.loadUserByUsername(username);
+        if (user == null) {
+            throw new UsernameNotFoundException("用户名不正确");
+        }
+        // 2. 权限查询
+        List<Role> roles = userDao.getRolesByUid(user.getId());
+        user.setRoles(roles);
+        return user;
+    }
+
+    @Override
+    public UserDetails updatePassword(UserDetails user, String newPassword) {
+        Integer i = userDao.updatePassword(user.getUsername(), newPassword);
+        if (i == 1) {
+            ((User) user).setPassword(newPassword);
+        }
+        return user;
+    }
+}
+    <update id="updatePassword">
+        update user
+        set password = #{newPassword}
+        where username = #{username};
+    </update>
+```
+
+![image-20220412164004058](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220412164004058.png)
 
 ## 6.  Remember Me
+
+- 简介
+- 基本使用
+- 原理分析
+- 持久化令牌
+
+### 6.1 简介
+
+**`记住我`**
+
+​		具体实现思路是通过 `Cookie` 记录当前用户身份。当用户登陆成功以后，会通过一定算法，将用户信息、时间戳等进行加密，加密完成后，通过响应头带回前端存储在  `Cookie` 中，当浏览器会话过期之后，如果再次访问该网站，会自动将  `Cookie` 中的信息发送给服务器，服务器对  `Cookie` 中的信息进行校验分析，进而确定用户身份。 `Cookie` 中保存的用户信息也是有时效的，例如三天、一周等。
+
+### 6.2 基本使用
+
+************************
+
+#### 开启记住我功能
+
+```java
+public class SecurityController extends WebSecurityConfigurerAdapter {
+	// ......
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+                .formLogin()
+            // ......
+                .and()
+                .rememberMe() // 开启记住我功能
+                .and()
+                .csrf().disable();
+    }
+}
+```
+
+![image-20220412175837367](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220412175837367.png)
+
+#### 使用RememberMe
+
+勾选 `RememberMe` 以后会发现请求中多了一个 `remember-me` 的参数。
+
+这个参数就是告诉服务器开启了 `RememberMe` 功能。**如果自定义登陆页面开启 `RememberMe` 功能只需要添加一个`remember-me` 的请求参数即可。**该请求会被**`RememberMeAuthenticationFilter`**进行拦截。自动登录源码如下：
+
+![image-20220412195956585](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220412195956585.png)
+
+
+
+
 
 
 
