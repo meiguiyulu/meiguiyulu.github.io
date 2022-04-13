@@ -2121,9 +2121,310 @@ public class SecurityController extends WebSecurityConfigurerAdapter {
 
 
 
+#### RememberMe令牌数据库的持久化
+
+`RememberMe` 令牌默认是存储在内存中的，要想存储在数据库中下只需要 设置 `jdbcTokenRepository`中的 数据源即可。
+
+![image-20220413152913358](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220413152913358.png)
+
+```java
+@Configuration
+public class SecurityController extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    private DataSource dataSource;
+
+    @Bean
+    public UserDetailsService userDetailsService() {
+        InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+        manager.createUser(User.withUsername("root").password("{noop}123").roles("admin").build());
+        return manager;
+    }
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userDetailsService());
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+                .formLogin()
+                .and()
+                .rememberMe() // 开启记住我功能
+                .tokenRepository(jdbcTokenRepository())// 设置数据库持久化
+//                .rememberMeServices(rememberMeServices()) // 指定 rememberMeServices 实现
+/*                .rememberMeParameter("remember-me") // 指定接收请求中哪个参数作为开启记住我的参数
+                .alwaysRemember(true) // 总是记住我*/
+                .and()
+                .csrf().disable();
+    }
+
+    @Bean
+    /*指定数据库持久化*/
+    public JdbcTokenRepositoryImpl jdbcTokenRepository(){
+        JdbcTokenRepositoryImpl tokenRepository = new JdbcTokenRepositoryImpl();
+        tokenRepository.setDataSource(dataSource);
+        tokenRepository.setCreateTableOnStartup(true);// 首次启动创建表结构 非首次启动需要设置false
+        return tokenRepository;
+    }
+}
+
+```
+
+![image-20220413160532480](https://gitee.com/yun-xiaojie/blog-image/raw/master/img/image-20220413160532480.png)
 
 
 
+### 6.3 传统web开发自定义记住我功能
+
+- 登陆页面
+
+  ```html
+  <!DOCTYPE html>
+  <html lang="en" xmlns:th="http://www.thymeleaf.org">
+  <head>
+      <meta charset="UTF-8">
+      <title>登录</title>
+  </head>
+  <body>
+  
+  <h1>用户登录</h1>
+  <form method="post" th:action="@{/doLogin}">
+      用户名: <input name="uname" type="text"> <br>
+      密码: <input name="pwd" type="password"> <br>
+      <!--  value的可选值可以为：true或者yes或者on或者1  -->
+      记住我:<input name="remember-me" type="checkbox" value="1"> <br>
+      <button>登录</button>
+  </form>
+  <hr>
+  <div th:text="${session.SPRING_SECURITY_LAST_EXCEPTION}"></div>
+  </body>
+  </html>
+  ```
+
+- `Spring Security`配置类
+
+  ```java
+  @Configuration
+  public class SecurityConfig extends WebSecurityConfigurerAdapter {
+  
+      /*自定义数据源*/
+      @Bean
+      public UserDetailsService userDetailsService() {
+          InMemoryUserDetailsManager userDetailsManager = new InMemoryUserDetailsManager();
+          userDetailsManager.createUser(User.withUsername("root").password("{noop}123").roles("admin").build());
+          return userDetailsManager;
+      }
+  
+      /*数据源初始化*/
+      @Override
+      protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+          auth.userDetailsService(userDetailsService());
+      }
+  
+      @Override
+      protected void configure(HttpSecurity http) throws Exception {
+          http.authorizeRequests()
+                  .mvcMatchers("/login.html").permitAll()
+                  .anyRequest().authenticated()
+                  .and()
+                  .formLogin()
+                  .loginPage("/login.html")
+                  .loginProcessingUrl("/doLogin")
+                  .defaultSuccessUrl("/", true)
+                  .usernameParameter("uname")
+                  .passwordParameter("pwd")
+                  .and()
+                  .rememberMe() // 开启记住我
+  
+                  .and()
+                  .csrf().disable();
+      }
+  }
+  ```
+
+### 6.4 前后端分离自定义记住我功能
+
+​		前后端分离实现自定义 `RememberMe` 主要需要注意以下几点：
+
+1. 从前端的 `JSON` 数据中获取 `remember-me` 。所以需要自定义 `RememberMe Service `的相关实现。
+2. 在登录过滤器中设置  `RememberMe Service `。
+
+
+
+- 因为 `request.getInputStream`只能读取一次，所以可以在登录过滤器中获得 `remember-me`的相关数据，然后存入 `request` 作用域中。自定义 `RememberMe Service `再从中得到`remember-me`的相关数据。
+
+  ```java
+  /**
+   * 自定义前后端分离 Filter
+   */
+  public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+      @Override
+      public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+          /**
+           * 1. 判断是否是 post 请求
+           * 2. 判断是否是 json 格式请求类型
+           * 3. 从json数据中获取用户输入的用户名和密码进行验证
+           */
+          // 判断是否是 post 请求
+          if (!request.getMethod().equals("post")) {
+              throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+          }
+  
+          // 2. 判断是否是 json 格式请求类型
+          if (request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_VALUE)) {
+              // 3. 从json数据中获取用户输入的用户名和密码进行验证 {"":xxx, "":xxx, "remember-me":""}
+              try {
+                  Map<String, String> userInfo = new ObjectMapper().readValue(request.getInputStream(), Map.class);
+                  String username = userInfo.get(getUsernameParameter());
+                  String password = userInfo.get(getPasswordParameter());
+  // 获取 remember-me 的相关数据
+                  String rememberMe = userInfo.get(AbstractRememberMeServices.DEFAULT_PARAMETER);
+                  if (!ObjectUtils.isEmpty(rememberMe)) {
+                      request.setAttribute(AbstractRememberMeServices.DEFAULT_PARAMETER, rememberMe);
+                  }
+                  System.out.println("用户名: " + username + " 密码: " + password + " 是否记住我: " + rememberMe);
+  
+                  UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(username, password);
+                  setDetails(request, authenticationToken);
+                  return this.getAuthenticationManager().authenticate(authenticationToken);
+              } catch (IOException e) {
+                  e.printStackTrace();
+              }
+          }
+          return super.attemptAuthentication(request, response);
+      }
+  }
+  
+  ```
+
+  ```java
+  /**
+   * 自定义记住我 service 实现类
+   */
+  public class MyRememberMeService extends PersistentTokenBasedRememberMeServices {
+  
+      public MyRememberMeService(String key, UserDetailsService userDetailsService, PersistentTokenRepository tokenRepository) {
+          super(key, userDetailsService, tokenRepository);
+      }
+  
+      /**
+       * 自定义前后端分离获取 remember-me 方式
+       *
+       * @param request
+       * @param parameter
+       * @return
+       */
+      @Override
+      protected boolean rememberMeRequested(HttpServletRequest request, String parameter) {
+          String paramValue = request.getAttribute(parameter).toString();
+          if (paramValue != null) {
+              if (paramValue.equalsIgnoreCase("yes") || paramValue.equalsIgnoreCase("on")
+                      || parameter.equalsIgnoreCase("yes") || parameter.equalsIgnoreCase("1")) {
+                  return true;
+              }
+          }
+          return false;
+      }
+  }
+  ```
+
+- `Spring Security`配置类
+
+  ```java
+  @Configuration
+  public class SecurityConfig extends WebSecurityConfigurerAdapter {
+  
+      @Bean
+      public UserDetailsService userDetailsService() {
+          InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+          manager.createUser(User.withUsername("root").password("{noop}123").roles("admin").build());
+          return manager;
+      }
+  
+      @Override
+      protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+          auth.userDetailsService(userDetailsService());
+      }
+  
+      @Bean
+      @Override
+      public AuthenticationManager authenticationManagerBean() throws Exception {
+          return super.authenticationManagerBean();
+      }
+  
+      // 自定义 Filter 交给工厂
+      @Bean
+      public LoginFilter loginFilter() throws Exception {
+          LoginFilter loginFilter = new LoginFilter();
+          loginFilter.setFilterProcessesUrl("/doLogin");
+          loginFilter.setUsernameParameter("uname"); 
+          loginFilter.setPasswordParameter("pwd"); 
+          loginFilter.setAuthenticationManager(authenticationManagerBean());
+          loginFilter.setRememberMeServices(rememberMeServices()); /** 设置认证成功以后使用自定义的RememberMeServices **/
+          loginFilter.setAuthenticationSuccessHandler(((request, response, authentication) -> {
+              Map<String, Object> map = new HashMap<>();
+              map.put("msg", "登陆成功");
+              map.put("authentication", authentication);
+              response.setStatus(HttpStatus.OK.value());
+              response.setContentType("application/json;charset=UTF-8");
+              String string = new ObjectMapper().writeValueAsString(map);
+              response.getWriter().println(string);
+          }));
+          loginFilter.setAuthenticationFailureHandler(((request, response, exception) -> {
+              Map<String, Object> map = new HashMap<>();
+              map.put("msg", "登录失败");
+              response.setContentType("application/json;charset=UTF-8");
+              response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+              String string = new ObjectMapper().writeValueAsString(map);
+              response.getWriter().println(string);
+          }));
+          return loginFilter;
+      }
+  
+      @Override
+      protected void configure(HttpSecurity http) throws Exception {
+          http.authorizeRequests()
+                  .anyRequest().authenticated()
+                  .and()
+                  .formLogin() // 前后端分离系统需要重写formLogin的登陆实现 自定义UsernamePasswordAuthenticationFilter
+                  .and()
+                  .rememberMe() // 记住我
+                  .rememberMeServices(rememberMeServices()) /** 设置自动登录时候使用的RememberMeServices **/
+                  .and()
+                  .exceptionHandling()
+                  .authenticationEntryPoint(((request, response, authException) -> {
+                      response.setContentType(MediaType.APPLICATION_JSON_UTF8_VALUE);
+                      response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                      response.getWriter().println("请认证之后再去处理!");
+                  }))
+                  .and()
+                  .logout()
+                  .logoutUrl("/logout")
+                  .logoutSuccessHandler(((request, response, authentication) -> {
+                      HashMap<String, Object> res = new HashMap<>();
+                      res.put("msg", "退出成功");
+                      res.put("exitingUser", authentication);
+                      res.put("status", "200");
+                      response.setContentType("application/json;charset=UTF-8");
+                      String string = new ObjectMapper().writeValueAsString(res);
+                      response.getWriter().print(string);
+                  }))
+                  .and()
+                  .csrf().disable();
+          http.addFilterAt(loginFilter(), UsernamePasswordAuthenticationFilter.class);
+  
+      }
+  
+      @Bean
+      public RememberMeServices rememberMeServices() {
+          return new MyRememberMeService(UUID.randomUUID().toString(), userDetailsService(), new InMemoryTokenRepositoryImpl());
+      }
+  }
+  ```
 
 ## 7.  会话管理
 
