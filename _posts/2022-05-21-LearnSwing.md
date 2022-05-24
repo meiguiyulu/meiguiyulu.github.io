@@ -182,7 +182,15 @@ JLabel(String text)// 创建具有指定文本的 JLabel 实例。
 JLabel(String text, Icon icon, int horizontalAlignment)//创建具有指定文本、图像和水平对齐方式的 JLabel 实例。
 
 JLabel(String text, int horizontalAlignment)//创建具有指定文本和水平对齐方式的 JLabel 实例。
+    
+/* JLabel中增加图片和文本 */
+ImageIcon imageIcon = new ImageIcon("yourFile.gif");
+JLabel label = new JLabel("Mixed", imageIcon, SwingConstants.RIGHT);
+frame.add(label);
 
+/* JLabel中增加HTML文本 */
+JLabel label = new JLabel("<html>bold <br> plain</html>");
+frame.add(label);
 
 /*
 常用方法
@@ -202,5 +210,40 @@ void setVerticalAlignment(int alignment)
 
 // 设置文本的字体类型、样式 和 大小
 void setFont(Font font)
+```
+
+### 5.2 JTextField
+
+> 定义
+
+单行文本框
+
+> 例子
+
+```java
+/* 文本框 */
+JTextField textField = new JTextField(20); // 20是设置文本框的长度
+rootPanel.add(textField);
+```
+
+> 方法
+
+```java
+/* 构造函数 */
+JTextField()    //用来创建一个默认的文本框
+JTextField(String text)    //用来创建指定初始化信息(text)的文本框
+JTextField(int columns)    //用来创建指定列数（colums）的文本框
+JTextField(String text, int columns)    //结合上面两个，创建一个既有初始化信息，又指定列数的文本框
+
+/* 设置文本 */
+setText(str);
+/* 获取文本 */
+getText();
+/* 设置字体 */
+setFont();  // 例如 setFont(new Font("楷体", Font.BOLD, 0x12));
+/* 设置文本框的水平对齐方式 */
+setHorizontalAlignment() // 例如 setHorizontalAlignment(JTextField.CENTER);
+/* 设置文本框的最多显示内容的列数 */
+setColumns();
 ```
 
