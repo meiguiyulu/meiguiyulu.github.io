@@ -247,3 +247,51 @@ setHorizontalAlignment() // 例如 setHorizontalAlignment(JTextField.CENTER);
 setColumns();
 ```
 
+### 5.3 JCheckBox
+
+> 定义
+
+复选框
+
+> 例子
+
+```java
+/* 复选框 */
+JCheckBox checkBox = new JCheckBox("同意");
+rootPanel.add(checkBox);
+```
+
+> 常用方法
+
+```java
+setSelected(true/false) // 设置是否选中
+isSelected() // 是否选中
+addActionListener() // 勾选或取消选中获取事件
+    
+/* 简单例子 */
+JCheckBox checkBox = new JCheckBox("同意");
+JButton button = new JButton("测试");
+checkBox.addActionListener(new ActionListener() {
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (checkBox.isSelected())
+            button.setEnabled(true);
+        else button.setEnabled(false);
+    }
+});
+/* 复选框 */
+rootPanel.add(checkBox);
+```
+
+### JComboBox
+
+> 定义
+
+下拉列表
+
+> 例子
+
+
+
+> 方法
+
