@@ -158,11 +158,11 @@ public class MyDemo {
 > 例子
 
 ```java
-        JLabel label = new JLabel("JLabel标签");
-        rootPanel.add(label);
+JLabel label = new JLabel("JLabel标签");
+rootPanel.add(label);
 
-	    // 简化
-	    rootPanel.add(new JLabel("JLabel标签"));
+// 简化
+rootPanel.add(new JLabel("JLabel标签"));
 ```
 
 > 方法
